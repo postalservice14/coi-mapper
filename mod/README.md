@@ -62,9 +62,32 @@ The mod registers no prototypes and changes no gameplay, so removing it later is
 
 ### Manifest fields
 
-The game validates the manifest and will silently skip a mod whose manifest is malformed.
-Three fields are mandatory: `id` (must not start with `COI-`), `version`
-(`major.minor[.patch[letter]]`), and `primary_dlls` — the DLL filenames to load, in order.
+The game validates the manifest and **silently skips** a mod whose manifest is malformed —
+no error, it simply never loads. The field list below is taken from `ModManifest` in
+`Mafi.Core`, which is the code that actually parses it.
+
+| Field | Notes |
+| --- | --- |
+| `id` | **Required.** `[a-zA-Z0-9][a-zA-Z0-9_-]*`, must not start with `COI-`. The mod's folder name must match it exactly. |
+| `version` | **Required.** `major.minor[.patch[letter]]`, e.g. `0.2.0` or `1.1.0a`. |
+| `primary_dlls` | **Required.** Array of DLL filenames, loaded in order. |
+| `display_name` | Max 50 characters. Note the snake_case — `displayName` is silently ignored. |
+| `description_short` | Max 180 characters. |
+| `description_long` | Supports simple markup (`<b>`, `<i>`, `\n`) in the in-game mod browser. |
+| `authors` | Array of strings. |
+| `min_game_version` | Lowest game version the mod supports. |
+| `max_verified_game_version` | Highest version it has been tested against. |
+| `links` | Flat array of URLs. |
+| `mod_dependencies` / `optional_mod_dependencies` | Other mods, with optional version constraints. |
+| `incompatible_mods` | Mod ids that conflict. |
+| `non_locking_dll_load` | Loads the DLL from memory so the file is not locked — lets you rebuild without closing the game. |
+| `can_add_to_saved_game` | Required for the mod to be usable on an existing save. |
+| `can_remove_from_saved_game` | Whether it can be taken back out. |
+| `primary_mod_class_name` | Which `IMod` to use when the assembly has more than one. |
+
+There is **no `license` or `changelog` field**. Both live in the repository and are surfaced
+through `links`, alongside the source. A `thumbnail.png` beside the manifest is picked up as
+the mod's image.
 
 ### When it exports
 

@@ -205,6 +205,11 @@ and `npm run schema-check` still pass.
 - [**satisfactory-calculator.com**](https://satisfactory-calculator.com/en/interactive-map) for
   showing what a good factory map looks like.
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md). Note that the mod version and the `.coimap` schema version
+move independently — a schema bump means existing exports must be regenerated.
+
 ## Licence
 
 [MIT](LICENSE) © 2026 John Kelly
