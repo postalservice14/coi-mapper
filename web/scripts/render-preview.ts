@@ -28,9 +28,25 @@ console.log(`  buildTextures  ${(t1 - t0).toFixed(1)} ms`);
 console.log(`  buildTileIndex ${(t2 - t1).toFixed(1)} ms`);
 console.log(`  occupied tiles ${index.reduce((n, v) => n + (v >= 0 ? 1 : 0), 0).toLocaleString()}`);
 
+/**
+ * Mirrors a texture top to bottom, as the scene does when it draws.
+ *
+ * Rows count northward in the game's tile space, so a straight dump comes out upside
+ * down — which would show the hillshade lit from the wrong side, the one thing this
+ * script exists to check.
+ */
+function asDrawn(rgba: Uint8ClampedArray): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(rgba.length);
+  const row = width * 4;
+  for (let y = 0; y < height; y++) {
+    out.set(rgba.subarray(y * row, y * row + row), (height - 1 - y) * row);
+  }
+  return out;
+}
+
 for (const [name, rgba] of Object.entries(textures)) {
   const path = `${outPrefix}-${name}.png`;
-  writeFileSync(path, encodePng(rgba, width, height));
+  writeFileSync(path, encodePng(asDrawn(rgba), width, height));
   console.log(`  wrote ${path}`);
 }
 
@@ -43,5 +59,5 @@ for (const overlay of [textures.deposits, textures.designations]) {
     for (let c = 0; c < 3; c++) composite[i + c] = composite[i + c]! * (1 - a) + overlay[i + c]! * a;
   }
 }
-writeFileSync(`${outPrefix}-composite.png`, encodePng(composite, width, height));
+writeFileSync(`${outPrefix}-composite.png`, encodePng(asDrawn(composite), width, height));
 console.log(`  wrote ${outPrefix}-composite.png`);

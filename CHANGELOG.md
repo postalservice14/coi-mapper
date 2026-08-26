@@ -33,6 +33,15 @@ misrendering them.
 
 ### Fixed
 
+- **The map was drawn upside down.** Tile rows count northward in the game, while an image's
+  rows count downward, so drawing row 0 at the top laid every map out mirrored top to bottom
+  against what the game shows. The scene now mirrors the world as it draws, which flips
+  terrain, buildings and overlays together and leaves the tile coordinates we report as the
+  ones the game would show for that spot. Hillshading moved with it — the sun was lighting
+  from what turned out to be the south, which is the direction that makes hills read as
+  valleys — and `npm run preview:png` mirrors its output too, so it still shows what the app
+  shows.
+
 - **Terrain rendered saddle brown.** Colours were taken from
   `TerrainMaterialProto.Graphics.Color`, which turns out to be a coarse particle tint rather
   than how the ground looks: grass, lush grass, forest floor, every dirt variant and compost

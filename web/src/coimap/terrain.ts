@@ -8,9 +8,15 @@ import { DESIGNATION_BITS } from './schema.gen';
 import type { Manifest } from './schema.gen';
 import type { Planes } from './types';
 
-/** Light direction for hillshading: from the north-west, 45° above the horizon. */
+/**
+ * Light direction for hillshading: from the north-west, 45° above the horizon.
+ *
+ * Positive Y is north here, because the rows count northward in the game's tile space —
+ * and the map is drawn mirrored for that reason. Lighting from -Y would put the sun at
+ * the bottom of the screen, where shading reads inside out and hills look like valleys.
+ */
 const LIGHT = (() => {
-  const [x, y, z] = [-0.6, -0.6, 0.75];
+  const [x, y, z] = [-0.6, 0.6, 0.75];
   const len = Math.hypot(x, y, z);
   return { x: x / len, y: y / len, z: z / len };
 })();

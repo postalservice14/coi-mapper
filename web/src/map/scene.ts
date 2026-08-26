@@ -435,6 +435,19 @@ export class MapScene {
     return this.world.scale.x;
   }
 
+  /**
+   * Sets the camera scale, mirroring the world vertically as it goes.
+   *
+   * The game's tile Y counts northward, while a raster's rows count downward, so drawing
+   * row 0 at the top of the screen lays the map out back to front. Mirroring the container
+   * rather than the data means terrain, buildings and overlays all flip together, picking
+   * keeps working through the same inverse, and the tile coordinates we report stay the
+   * ones the game itself would show for that spot.
+   */
+  private setZoom(z: number) {
+    this.world.scale.set(z, -z);
+  }
+
   /** True on an odd quarter turn, where the map's on-screen axes are swapped. */
   private get quarterTurned(): boolean {
     return this.quarterTurns % 2 === 1;
@@ -476,7 +489,7 @@ export class MapScene {
     const { width, height } = this.doc.manifest.map;
     const { width: sw, height: sh } = this.app.screen;
     this.fitScale = this.computeFitScale();
-    this.world.scale.set(this.fitScale);
+    this.setZoom(this.fitScale);
     this.placeWorldPointAt(width / 2, height / 2, sw / 2, sh / 2);
     this.cameraChanged();
   }
@@ -501,7 +514,7 @@ export class MapScene {
     // lies, so on a non-square map a turn can leave the camera below the new minimum.
     this.fitScale = this.computeFitScale();
     const min = this.fitScale * MIN_ZOOM_FACTOR;
-    if (this.zoom < min) this.world.scale.set(min);
+    if (this.zoom < min) this.setZoom(min);
 
     this.placeWorldPointAt(centre.x, centre.y, sw / 2, sh / 2);
     this.cameraChanged();
@@ -541,7 +554,7 @@ export class MapScene {
     if (next === this.zoom) return;
 
     const w = this.screenToWorld(screenX, screenY);
-    this.world.scale.set(next);
+    this.setZoom(next);
     this.placeWorldPointAt(w.x, w.y, screenX, screenY);
     this.cameraChanged();
   }
