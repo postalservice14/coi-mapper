@@ -116,8 +116,12 @@ export class MapScene {
       // Capped both by device ratio and by absolute backing size; see safeResolution.
       resolution: safeResolution(host.clientWidth, host.clientHeight),
       autoDensity: true,
-      preference: 'webgl',
+      // WebGL by default. ?renderer=webgpu switches backend, which is worth trying when
+      // the drawing buffer is demonstrably correct but nothing reaches the screen —
+      // that points at the platform's WebGL compositing path rather than at our scene.
+      preference: new URLSearchParams(location.search).get('renderer') === 'webgpu' ? 'webgpu' : 'webgl',
     });
+    console.info(`[coi-mapper] scene: renderer backend = ${app.renderer.type === 1 ? 'webgl' : 'webgpu'}`);
 
     logCapabilities(app, canvas, host);
 
@@ -223,8 +227,51 @@ export class MapScene {
         lines.push(`layer ${name}: ${JSON.stringify(info)}`);
       }
       for (const line of lines) console.info(`[coi-mapper] draw: ${line}`);
+      this.logPresentation();
     } catch (err) {
       console.warn('[coi-mapper] draw: state query failed', err);
+    }
+  }
+
+  /**
+   * Reports whether the canvas is actually on screen.
+   *
+   * A correct frame in the drawing buffer still shows nothing if the canvas is hidden,
+   * zero-sized, covered by another element, or never presented because the ticker is not
+   * running. Those are invisible to any check that only inspects the renderer.
+   */
+  private logPresentation() {
+    try {
+      const canvas = this.app.canvas as HTMLCanvasElement;
+      const rect = canvas.getBoundingClientRect();
+      const style = getComputedStyle(canvas);
+
+      console.info(
+        `[coi-mapper] present: rect ${Math.round(rect.width)}x${Math.round(rect.height)} at ` +
+          `${Math.round(rect.left)},${Math.round(rect.top)}; display=${style.display} ` +
+          `visibility=${style.visibility} opacity=${style.opacity} zIndex=${style.zIndex} ` +
+          `transform=${style.transform}`,
+      );
+
+      // What the browser thinks is on top at the canvas's centre. Anything other than the
+      // canvas itself is covering the map.
+      const topmost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const describe = (el: Element | null) =>
+        el ? `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ').join('.') : ''}` : 'nothing';
+      console.info(`[coi-mapper] present: topmost element at canvas centre is ${describe(topmost)}`);
+
+      // Is the render loop actually producing frames, or did only the manual render run?
+      let frames = 0;
+      const count = () => { frames++; };
+      this.app.ticker.add(count);
+      setTimeout(() => {
+        this.app.ticker.remove(count);
+        console.info(
+          `[coi-mapper] present: ticker started=${this.app.ticker.started}, ${frames} frames in 1s`,
+        );
+      }, 1000);
+    } catch (err) {
+      console.warn('[coi-mapper] present: query failed', err);
     }
   }
 
