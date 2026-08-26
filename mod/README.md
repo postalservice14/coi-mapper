@@ -66,13 +66,33 @@ The game validates the manifest and will silently skip a mod whose manifest is m
 Three fields are mandatory: `id` (must not start with `COI-`), `version`
 (`major.minor[.patch[letter]]`), and `primary_dlls` — the DLL filenames to load, in order.
 
+### When it exports
+
+Two triggers, both in the simulation layer:
+
+| Trigger | When |
+| --- | --- |
+| World loaded | Once, on loading an existing save |
+| **Game saved** | After every save completes |
+
+Saving is the on-demand trigger: build something, hit save, and the map is refreshed. It
+needs no key binding, cannot clash with the game's own shortcuts, and reads naturally.
+
+There is deliberately **no keyboard shortcut**. Key bindings live in `Mafi.Unity`, the
+rendering layer — `Mafi.Core` has no notion of them. Binding a key would mean referencing
+the Unity assembly from a mod that otherwise needs only the simulation layer, for a trigger
+that saving already provides. If a real hotkey is wanted later, that is the trade to make.
+
+The export hooks `OnSaveDone` rather than `BeforeSave`, so a slow export never delays the
+save itself, and a failed save never produces a map from a half-written world.
+
 ### Output
 
-Loading a save writes:
+```
+%APPDATA%\Captain of Industry\CoiMapper\<save name>.coimap
+```
 
-```
-%APPDATA%\Captain of Industry\CoiMapper\world.coimap
-```
+Named after the save so several bases do not overwrite one another.
 
 ### When nothing happens
 

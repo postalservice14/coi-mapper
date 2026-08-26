@@ -28,7 +28,8 @@ namespace CoiMapper.Export {
             return (T)m_resolver.Resolve(typeof(T));
         }
 
-        public void ExportTo(string path) {
+        /// <param name="gameName">The save's name, used for the map label. May be null.</param>
+        public void ExportTo(string path, string gameName = null) {
             var terrain = Resolve<TerrainManager>();
             var entities = Resolve<IEntitiesManager>();
 
@@ -51,7 +52,7 @@ namespace CoiMapper.Export {
                 var counts = new Counts {
                     Entities = entityCount, Transports = 0, Edges = 0, Protos = usedProtos.Count,
                 };
-                WriteManifest(archive, map, surfaces, counts);
+                WriteManifest(archive, map, surfaces, counts, gameName);
             }
         }
 
@@ -222,12 +223,21 @@ namespace CoiMapper.Export {
         }
 
         // ── manifest ──────────────────────────────────────────────────────────
-        private void WriteManifest(CoiMapArchive archive, MapInfo map, List<Surface> surfaces, Counts counts) {
+        private void WriteManifest(
+            CoiMapArchive archive, MapInfo map, List<Surface> surfaces, Counts counts, string gameName) {
+            // The game's version is not exposed as a service, but the assembly this mod is
+            // running against carries it, which is the version that actually produced the data.
+            var gameVersion = typeof(TerrainManager).Assembly.GetName().Version;
+
             var manifest = new Manifest {
                 SchemaVersion = CoiMapSchema.SchemaVersion,
                 Generator = "CoiMapper " + typeof(WorldExporter).Assembly.GetName().Version,
                 GeneratedAt = DateTime.UtcNow.ToString("o"),
-                Game = new GameInfo { Version = "0.8.x", SaveVersion = 0, MapName = "Captain of Industry" },
+                Game = new GameInfo {
+                    Version = gameVersion.Major + "." + gameVersion.Minor + "." + gameVersion.Build,
+                    SaveVersion = 0,
+                    MapName = string.IsNullOrEmpty(gameName) ? "Captain of Industry" : gameName,
+                },
                 Map = map,
                 Planes = archive.WrittenPlanes.ToArray(),
                 Surfaces = surfaces.ToArray(),
