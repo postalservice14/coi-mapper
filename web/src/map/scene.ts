@@ -63,7 +63,10 @@ export class MapScene {
       height: Math.max(1, host.clientHeight),
       backgroundColor: 0x0d1117,
       antialias: true,
-      resolution: window.devicePixelRatio,
+      // Capped rather than the raw device ratio: on a 3x display a large window would
+      // allocate a framebuffer several times the size of the map's own textures, which on
+      // a big base is the difference between fitting in GPU memory and not.
+      resolution: Math.min(window.devicePixelRatio, 2),
       autoDensity: true,
       preference: 'webgl',
     });
@@ -108,15 +111,22 @@ export class MapScene {
 
     // Raster layers, bottom to top. Entities sit under the network overlays so belts
     // and power lines stay visible where they cross a building.
+    //
+    // A layer is skipped entirely when the export carried no plane for it. Each one is
+    // width*height*4 bytes of texture — 55 MB on a 13.8M-tile map — so uploading empty
+    // overlays can exhaust GPU memory and leave nothing on screen at all.
     for (const name of ['terrain', 'deposits', 'designations', 'entities'] as const) {
-      const texture = Texture.from(layers[name]);
-      // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
-      texture.source.scaleMode = 'nearest';
-      const sprite = new Sprite(texture);
-      sprite.width = this.doc.manifest.map.width;
-      sprite.height = this.doc.manifest.map.height;
-      this.sprites.set(name, sprite);
-      this.world.addChild(sprite);
+      const bitmap = layers[name];
+      if (bitmap) {
+        const texture = Texture.from(bitmap);
+        // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
+        texture.source.scaleMode = 'nearest';
+        const sprite = new Sprite(texture);
+        sprite.width = this.doc.manifest.map.width;
+        sprite.height = this.doc.manifest.map.height;
+        this.sprites.set(name, sprite);
+        this.world.addChild(sprite);
+      }
       if (name === 'entities') this.world.addChild(this.buildTransports(), this.buildPower());
     }
 

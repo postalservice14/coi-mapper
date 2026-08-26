@@ -3,12 +3,18 @@ import type { Manifest, Entity, Transport, NetworkEdge, Proto, PlaneName } from 
 /** Raster planes, decoded into typed arrays. Optional planes may be absent. */
 export type Planes = Partial<Record<PlaneName, Uint8Array | Uint16Array>>;
 
-/** The four rendered map layers, as GPU-ready bitmaps. */
+/**
+ * Rendered map layers, as GPU-ready bitmaps.
+ *
+ * Overlay layers are absent when the export has no plane behind them. On a 13.8M-tile map
+ * each layer is 55 MB of texture, so uploading empty ones is memory a large base cannot
+ * spare — and on real hardware that is the difference between a map and a black rectangle.
+ */
 export interface MapLayers {
   terrain: ImageBitmap;
-  deposits: ImageBitmap;
-  designations: ImageBitmap;
   entities: ImageBitmap;
+  deposits?: ImageBitmap;
+  designations?: ImageBitmap;
 }
 
 export type LayerName = keyof MapLayers | 'transports' | 'power';

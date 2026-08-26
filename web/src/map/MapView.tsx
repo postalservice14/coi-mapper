@@ -21,6 +21,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
   const [ready, setReady] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const hoveredRef = useRef(-1);
 
   // Build the scene once per document.
@@ -30,19 +31,39 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
 
     let disposed = false;
     let scene: MapScene | null = null;
+    setFailure(null);
 
-    MapScene.create(canvas, doc).then((s) => {
-      // The effect may have been torn down while Pixi was initialising.
-      if (disposed) { s.destroy(); return; }
-      scene = s;
-      sceneRef.current = s;
-      setReady(true);
-    });
+    // Losing the WebGL context is the usual way a very large map fails: the driver drops
+    // it rather than reporting an allocation failure, and the canvas simply goes black.
+    const onContextLost = (e: Event) => {
+      e.preventDefault();
+      setFailure(
+        'The graphics context was lost, which usually means the map is too large for the ' +
+          'available GPU memory. Closing other tabs and reloading often helps.',
+      );
+    };
+    canvas.addEventListener('webglcontextlost', onContextLost);
+
+    MapScene.create(canvas, doc)
+      .then((s) => {
+        // The effect may have been torn down while Pixi was initialising.
+        if (disposed) { s.destroy(); return; }
+        scene = s;
+        sceneRef.current = s;
+        setReady(true);
+      })
+      .catch((err: unknown) => {
+        if (disposed) return;
+        // Without this the promise rejects unhandled and the canvas stays black with no
+        // indication of why.
+        setFailure(`Could not start the map renderer: ${(err as Error)?.message ?? String(err)}`);
+      });
 
     return () => {
       disposed = true;
       setReady(false);
       sceneRef.current = null;
+      canvas.removeEventListener('webglcontextlost', onContextLost);
       scene?.destroy();
     };
   }, [doc]);
@@ -156,5 +177,22 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
     if (ready && focus) sceneRef.current?.centerOn(focus.tx, focus.ty);
   }, [ready, focus]);
 
-  return <canvas ref={canvasRef} className="map-canvas" />;
+  return (
+    <>
+      <canvas ref={canvasRef} className="map-canvas" />
+      {failure && (
+        <div className="map-failure" role="alert">
+          <h2>The map could not be drawn</h2>
+          <p>{failure}</p>
+          <p className="muted">
+            {doc.manifest.map.width.toLocaleString()} × {doc.manifest.map.height.toLocaleString()} tiles
+            {' · '}
+            {Object.keys(doc.layers).length} layers
+            {' · '}
+            {((doc.manifest.map.width * doc.manifest.map.height * 4 * Object.keys(doc.layers).length) / 1e6).toFixed(0)} MB of texture
+          </p>
+        </div>
+      )}
+    </>
+  );
 }

@@ -36,8 +36,11 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
       entities: buildEntityTexture(parsed.entities, parsed.protos, width, height),
     };
 
+    // Only upload layers that have something to draw; a null raster means the export
+    // carried no plane for it.
     const layers = {} as WorkerDoc['layers'];
     for (const [name, rgba] of Object.entries(rasters)) {
+      if (!rgba) continue;
       layers[name as keyof WorkerDoc['layers']] = await createImageBitmap(new ImageData(rgba, width, height));
     }
 
@@ -57,7 +60,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
     // Hand the large buffers over rather than copying them.
     const transfer: Transferable[] = [
       tileToEntity.buffer,
-      ...Object.values(layers),
+      ...Object.values(layers).filter(Boolean),
       ...Object.values(doc.planes).map((p) => p!.buffer),
     ];
     self.postMessage({ ok: true, doc } satisfies LoaderResponse, { transfer });

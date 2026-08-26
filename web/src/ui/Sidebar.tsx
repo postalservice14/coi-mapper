@@ -9,13 +9,21 @@ interface Props {
   onPick: (entityIndex: number) => void;
 }
 
-const LAYERS: { name: LayerName; label: string; hint: string }[] = [
+interface LayerRow {
+  name: LayerName;
+  label: string;
+  hint: string;
+  /** Absent means always available; otherwise, whether this export contains the layer. */
+  needs?: (doc: WorkerDoc) => boolean;
+}
+
+const LAYERS: LayerRow[] = [
   { name: 'terrain', label: 'Terrain', hint: 'Surface types with hillshading' },
-  { name: 'deposits', label: 'Deposits', hint: 'Ore and mineral bodies' },
-  { name: 'designations', label: 'Designations', hint: 'Mining, dumping and forestry areas' },
+  { name: 'deposits', label: 'Deposits', hint: 'Ore and mineral bodies', needs: (d) => !!d.layers.deposits },
+  { name: 'designations', label: 'Designations', hint: 'Mining, dumping and forestry areas', needs: (d) => !!d.layers.designations },
   { name: 'entities', label: 'Buildings', hint: 'Placed machines and structures' },
-  { name: 'transports', label: 'Conveyors & pipes', hint: 'Logistics runs' },
-  { name: 'power', label: 'Power grid', hint: 'Electricity and shaft connections' },
+  { name: 'transports', label: 'Conveyors & pipes', hint: 'Logistics runs', needs: (d) => d.transports.length > 0 },
+  { name: 'power', label: 'Power grid', hint: 'Electricity and shaft connections', needs: (d) => d.edges.length > 0 },
 ];
 
 const MAX_RESULTS = 60;
@@ -47,12 +55,27 @@ export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
     <aside className="sidebar">
       <section>
         <h3>Layers</h3>
-        {LAYERS.map((l) => (
-          <label key={l.name} className="toggle" title={l.hint}>
-            <input type="checkbox" checked={visibility[l.name]} onChange={() => onToggle(l.name)} />
-            <span>{l.label}</span>
-          </label>
-        ))}
+        {LAYERS.map((l) => {
+          // An overlay the export never wrote cannot be shown; say so rather than offering
+          // a toggle that silently does nothing.
+          const available = l.needs ? l.needs(doc) : true;
+          return (
+            <label
+              key={l.name}
+              className={`toggle${available ? '' : ' unavailable'}`}
+              title={available ? l.hint : `${l.hint} — not present in this export`}
+            >
+              <input
+                type="checkbox"
+                checked={available && visibility[l.name]}
+                disabled={!available}
+                onChange={() => onToggle(l.name)}
+              />
+              <span>{l.label}</span>
+              {!available && <span className="muted"> — not exported</span>}
+            </label>
+          );
+        })}
       </section>
 
       <section>

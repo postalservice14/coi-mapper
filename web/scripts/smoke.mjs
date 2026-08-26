@@ -96,13 +96,18 @@ try {
   const status = await page.locator('.statusbar').textContent();
   check('status bar reports tile', /\d+,\s*\d+/.test(status ?? ''), status?.slice(0, 70) ?? '');
 
-  // Toggle every optional layer on.
+  // Toggle every optional layer that this export actually contains. Layers with no data
+  // are rendered disabled on purpose, so clicking them would (correctly) never succeed.
+  let toggled = 0, unavailable = 0;
   for (const label of ['Deposits', 'Designations', 'Power grid']) {
-    await page.locator('label.toggle').filter({ hasText: label }).click();
+    const row = page.locator('label.toggle').filter({ hasText: label });
+    if (await row.locator('input:disabled').count()) { unavailable++; continue; }
+    await row.click();
+    toggled++;
   }
   await page.waitForTimeout(400);
   await page.screenshot({ path: `${outDir}/3-all-layers.png` });
-  check('optional layers toggle', true);
+  check('optional layers toggle', true, `${toggled} toggled, ${unavailable} absent from this export`);
 
   // Search then select a building, which should open the inspector.
   await page.locator('input.search').fill('Furnace');

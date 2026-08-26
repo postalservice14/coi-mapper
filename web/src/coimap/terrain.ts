@@ -47,10 +47,15 @@ export function parseHex(hex: string): [number, number, number] {
  */
 export type Rgba = Uint8ClampedArray<ArrayBuffer>;
 
+/**
+ * Overlay layers are `null` when the export has no plane to draw them from, rather than a
+ * fully transparent buffer. On a large map each layer is tens of megabytes of texture, and
+ * uploading empty ones wastes GPU memory that a big base cannot spare.
+ */
 export interface TerrainTextures {
   terrain: Rgba;
-  deposits: Rgba;
-  designations: Rgba;
+  deposits: Rgba | null;
+  designations: Rgba | null;
 }
 
 export function buildTextures(planes: Planes, manifest: Manifest): TerrainTextures {
@@ -167,9 +172,9 @@ function buildDepositOverlay(
   tiles: number,
   deposit?: Uint8Array | Uint16Array,
   amount?: Uint8Array | Uint16Array,
-): Rgba {
+): Rgba | null {
+  if (!deposit) return null;
   const rgba = new Uint8ClampedArray(tiles * 4);
-  if (!deposit) return rgba;
 
   const maxId = manifest.deposits.reduce((m, d) => Math.max(m, d.id), 0);
   const [r, g, b] = [new Uint8Array(maxId + 1), new Uint8Array(maxId + 1), new Uint8Array(maxId + 1)];
@@ -192,9 +197,9 @@ function buildDepositOverlay(
   return rgba;
 }
 
-function buildDesignationOverlay(tiles: number, designation?: Uint8Array | Uint16Array): Rgba {
+function buildDesignationOverlay(tiles: number, designation?: Uint8Array | Uint16Array): Rgba | null {
+  if (!designation) return null;
   const rgba = new Uint8ClampedArray(tiles * 4);
-  if (!designation) return rgba;
 
   const colors = DESIGNATION_COLORS.map(([bit, hex]) => ({ bit, rgb: parseHex(hex) }));
   for (let i = 0; i < tiles; i++) {

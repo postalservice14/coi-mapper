@@ -191,3 +191,20 @@ kbd {
   border-top: 1px solid var(--border);
   font-size: 12px;
 }
+
+/* Shown when the renderer fails, in place of an unexplained black canvas. */
+.map-failure {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 32px;
+  text-align: center;
+  background: rgba(13, 17, 23, 0.92);
+}
+.map-failure h2 { color: var(--danger); }
+.map-failure p { margin: 0; max-width: 46ch; }
+
+.toggle.unavailable { opacity: 0.45; cursor: default; }

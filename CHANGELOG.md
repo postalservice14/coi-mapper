@@ -26,6 +26,17 @@ misrendering them.
   ("Grass (red flowers)"), plus `FarmGround` and `LandfillOld`. All were falling through to
   the saddle brown particle tint.
 
+- **A large map could render as a black rectangle.** Overlay layers were built even when the
+  export contained no plane behind them, so a 13.8M-tile map uploaded 220 MB of texture of
+  which 110 MB was fully transparent. Absent layers are now skipped entirely, and the
+  renderer's device pixel ratio is capped at 2 so a high-DPI display cannot add a framebuffer
+  several times the size of the map itself.
+- A renderer failure now says so. `MapScene.create` had no rejection handler and nothing
+  listened for `webglcontextlost`, so losing the GPU context left a black canvas and no
+  explanation anywhere.
+- Layer toggles for data an export does not contain are shown disabled and marked "not
+  exported", rather than appearing to work and doing nothing.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs
