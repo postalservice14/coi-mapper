@@ -1,0 +1,26 @@
+# ---------------------------------------------------------------------------
+# Game assemblies — licensed files copied from a local Captain of Industry
+# install. NEVER commit or publish these.
+# ---------------------------------------------------------------------------
+mod/lib/
+*.dll
+*.pdb
+
+# Save games and exports (large binaries; keep them local)
+*.save
+*.coimap
+
+# .NET
+[Bb]in/
+[Oo]bj/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

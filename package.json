@@ -1,0 +1,12 @@
+{
+  "name": "coi-mapper",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive web map for Captain of Industry save games",
+  "type": "module",
+  "scripts": {
+    "schema": "node schema/generate.mjs",
+    "inspect": "node samples/inspect-save.mjs",
+    "fixture": "node samples/make-fixture.mjs"
+  }
+}

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Cross-language check for the .coimap contract.
+
+    Links the exporter's real writer sources — which deliberately have no dependency on the
+    game assemblies — into a modern console app that runs on any platform. It emits an
+    archive that the TypeScript parser then reads, so a mismatch between the C# emitter and
+    the web reader fails here rather than after a round trip through Windows and the game.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <RootNamespace>CoiMapper.SchemaCheck</RootNamespace>
+    <AssemblyName>CoiMapper.SchemaCheck</AssemblyName>
+    <NoWarn>CS0649</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../CoiMapper.Exporter/Schema/CoiMapSchema.gen.cs" Link="Schema/CoiMapSchema.gen.cs" />
+    <Compile Include="../CoiMapper.Exporter/Schema/JsonWriter.cs" Link="Schema/JsonWriter.cs" />
+    <Compile Include="../CoiMapper.Exporter/Export/CoiMapArchive.cs" Link="Export/CoiMapArchive.cs" />
+    <Compile Include="../CoiMapper.Exporter/Export/MaterialPalette.cs" Link="Export/MaterialPalette.cs" />
+  </ItemGroup>
+
+</Project>

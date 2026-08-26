@@ -1,0 +1,8 @@
+{
+  "id": "CoiMapper",
+  "name": "CoiMapper Exporter",
+  "version": "0.1.0",
+  "author": "coi-mapper",
+  "description": "Exports the current world to a .coimap file for the CoI interactive web map.",
+  "dependencies": []
+}

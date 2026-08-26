@@ -1,0 +1,115 @@
+# CoiMapper exporter mod
+
+Runs inside Captain of Industry and writes a `.coimap` for the web map.
+
+## Phase 0 — game assemblies (required)
+
+The mod compiles against the game's own assemblies, which cannot be redistributed. Copy
+them from a Windows install:
+
+```
+<Steam>/steamapps/common/Captain of Industry/Captain of Industry_Data/Managed/
+    Mafi.dll
+    Mafi.Core.dll
+    Mafi.Base.dll
+```
+
+into `mod/lib/`. That directory is gitignored — **never commit these files.**
+
+They serve two purposes:
+
+1. **Building.** With them present, `dotnet build` works on macOS and Linux too — the
+   `Microsoft.NETFramework.ReferenceAssemblies` package supplies the `net48` targeting
+   pack, so no .NET Framework install is needed. Only *running* the mod requires Windows.
+2. **Discovering the API.** There is no published documentation for `TerrainManager`,
+   `TransportsManager` and friends. Decompile `Mafi.Core.dll` with
+   [ILSpy](https://github.com/icsharpcode/ILSpy) and read the real signatures. Every
+   property access in `WorldExporter` must be verified against that source rather than
+   guessed — a wrong name is a compile error at best, and silently wrong data at worst.
+
+## Build and install
+
+```bash
+cd mod/CoiMapper.Exporter
+dotnet build -c Release
+```
+
+Copy the output plus `manifest.json` into:
+
+```
+%APPDATA%/Captain of Industry/Mods/CoiMapper/
+```
+
+The directory name must match the `id` in `manifest.json`. Launch the game, load a save,
+and the mod writes to `%APPDATA%/Captain of Industry/CoiMapper/world.coimap`.
+
+## What is implemented
+
+| Piece | State |
+| --- | --- |
+| `CoiMapperMod` — `IMod` lifecycle, export trigger | ✅ |
+| `JsonWriter` — dependency-free JSON emission | ✅ |
+| `CoiMapArchive` — ZIP layout, binary plane writing | ✅ |
+| `Schema/CoiMapSchema.gen.cs` — generated data model | ✅ |
+| `WorldExporter` — terrain, buildings, prototypes | ✅ Written against decompiled APIs |
+| `WorldExporter` — networks, deposits, designations | 🚧 Next increment |
+
+Everything above **compiles** against the real game assemblies. It has **not yet been run
+inside the game** — that is the remaining unknown.
+
+### APIs it depends on
+
+Read off the decompiled assemblies, not guessed:
+
+| Need | API |
+| --- | --- |
+| Map size | `TerrainManager.TerrainWidth` / `.TerrainHeight` |
+| Height | `TerrainManager.GetHeight(GetTileIndex(new Tile2i(x, y))).Value.ToFloat()` |
+| Natural ground colour | `TerrainManager.GetFirstLayerSlim(index).SlimIdRaw` |
+| Material legend | `TerrainManager.TerrainMaterials`, each proto's own `SlimId` |
+| Ocean | `TerrainManager.IsOcean(index)` |
+| Buildings | `IEntitiesManager.GetAllEntitiesOfType<IStaticEntity>()` |
+| Footprint | `IStaticEntity.OccupiedTiles` (already rotated) + `.CenterTile` |
+| State | `IStaticEntity.ConstructionState`, `.IsPaused`, `.IsEnabled` |
+| Display name | `EntityProto.Strings.Name.TranslatedString` |
+
+Note that `TileSurfaceData` covers only **player-placed** surfaces such as concrete. Natural
+terrain has none, so the surface plane records the topmost *material* layer instead — reading
+`TryGetTileSurface` alone would render blank ground everywhere the player had not paved.
+
+## Decompiling
+
+```bash
+export DOTNET_ROOT="$HOME/.dotnet"; export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
+dotnet tool install -g ilspycmd
+
+ilspycmd -l class -l interface -l struct -l enum mod/lib/Mafi.Core.dll   # index all types
+ilspycmd -t Mafi.Core.Terrain.TerrainManager mod/lib/Mafi.Core.dll -r mod/lib
+```
+
+Two traps worth knowing: many `Mafi.*` types (`Tile2i`, `HeightTilesF`) actually live in
+**Mafi.Core.dll**, not Mafi.dll — namespace does not imply assembly. And interface members
+decompile without access modifiers, so grepping for `public` silently hides them.
+
+## Off-game contract test
+
+`CoiMapper.SchemaCheck` links the exporter's writer sources — which have no dependency on the
+game — into a net10 console app, so the archive format can be exercised on any machine:
+
+```bash
+dotnet run --project mod/CoiMapper.SchemaCheck -c Release -- /tmp/check.coimap
+cd web && npm run schema-check -- /tmp/check.coimap
+```
+
+The TypeScript parser then asserts the values survive: JSON escaping, unicode, float
+formatting, enum names, booleans, and row-major plane byte order.
+
+## Verifying an export
+
+Beyond "a file appeared":
+
+- Entity count matches the in-game statistics panel.
+- Terrain dimensions match the map's known size.
+- Spot-check five known buildings against the in-game map overlay.
+- Compare the rendered web map with that overlay to confirm axis orientation — a flipped
+  or transposed Y axis renders a plausible map that is entirely wrong.

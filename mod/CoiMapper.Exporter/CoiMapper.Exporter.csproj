@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Captain of Industry loads mods into its own .NET Framework 4.8 runtime. -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>CoiMapper.Exporter</AssemblyName>
+    <RootNamespace>CoiMapper</RootNamespace>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <!-- Lets the project build on macOS and Linux, where no .NET Framework is installed. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- On .NET Framework, ZipArchive lives in these assemblies rather than mscorlib. -->
+  <ItemGroup>
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.IO.Compression.FileSystem" />
+  </ItemGroup>
+
+  <!--
+    Game assemblies. Copy these from the Windows install's `Captain of Industry_Data/Managed/`
+    into `mod/lib/`. They are licensed game files: `mod/lib/` is gitignored and they must
+    never be committed. See mod/README.md.
+  -->
+  <ItemGroup>
+    <Reference Include="Mafi">
+      <HintPath>..\lib\Mafi.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Mafi.Core">
+      <HintPath>..\lib\Mafi.Core.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Mafi.Base">
+      <HintPath>..\lib\Mafi.Base.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
