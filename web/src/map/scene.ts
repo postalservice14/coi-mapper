@@ -169,6 +169,65 @@ export class MapScene {
     this.observer.observe(this.host);
   }
 
+  /**
+   * Reports what the renderer actually produced.
+   *
+   * "Nothing visible" has several very different causes — textures that never uploaded,
+   * sprites sized or positioned outside the view, or a draw that happened but produced the
+   * clear colour. This distinguishes them by reading pixels back straight after a render,
+   * before the drawing buffer is swapped.
+   */
+  private logRenderState() {
+    try {
+      const layers: Record<string, unknown> = {};
+      for (const [name, container] of this.sprites) {
+        if (!(container instanceof Container) || container.children.length === 0) continue;
+        const first = container.children[0] as Sprite;
+        const bounds = container.getBounds();
+        layers[name] = {
+          children: container.children.length,
+          visible: container.visible,
+          texture: first?.texture ? `${first.texture.width}x${first.texture.height}` : 'none',
+          spriteSize: first ? `${first.width}x${first.height}` : 'none',
+          screenBounds: `${Math.round(bounds.x)},${Math.round(bounds.y)} ${Math.round(bounds.width)}x${Math.round(bounds.height)}`,
+        };
+      }
+
+      this.app.render();
+
+      // Sample the middle of the canvas immediately after rendering: the drawing buffer is
+      // still intact within this task, so a uniform result means nothing was drawn there.
+      let sample = 'unavailable';
+      const gl = (this.app.renderer as unknown as { gl?: WebGL2RenderingContext }).gl;
+      if (gl) {
+        const size = 32;
+        const px = new Uint8Array(size * size * 4);
+        const cx = Math.max(0, Math.floor((this.app.renderer.width - size) / 2));
+        const cy = Math.max(0, Math.floor((this.app.renderer.height - size) / 2));
+        gl.readPixels(cx, cy, size, size, gl.RGBA, gl.UNSIGNED_BYTE, px);
+        const seen = new Set<number>();
+        for (let i = 0; i < px.length; i += 4) seen.add((px[i]! << 16) | (px[i + 1]! << 8) | px[i + 2]!);
+        const first = [...seen].slice(0, 3).map((c) => `#${c.toString(16).padStart(6, '0')}`);
+        sample = `${seen.size} distinct colours ${first.join(' ')}`;
+      }
+
+      // Flattened to plain lines: nested objects are collapsed by most console capture,
+      // and a flat log is easier to copy out of DevTools when reporting a problem.
+      const lines = [
+        `renderer type ${this.app.renderer.type}, canvas ${this.app.renderer.width}x${this.app.renderer.height}`,
+        `world scale ${this.world.scale.x.toFixed(4)} at ${Math.round(this.world.x)},${Math.round(this.world.y)}, ` +
+          `${this.app.stage.children.length} stage children`,
+        `centre sample: ${sample}`,
+      ];
+      for (const [name, info] of Object.entries(layers)) {
+        lines.push(`layer ${name}: ${JSON.stringify(info)}`);
+      }
+      for (const line of lines) console.info(`[coi-mapper] draw: ${line}`);
+    } catch (err) {
+      console.warn('[coi-mapper] draw: state query failed', err);
+    }
+  }
+
   /** Matches the renderer to a new host size, preserving the centred world point. */
   private applySize(width: number, height: number) {
     if (width < 1 || height < 1) return;
@@ -187,6 +246,7 @@ export class MapScene {
       this.fitted = true;
       this.fitToMap();
       console.info(`[coi-mapper] scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
+      this.logRenderState();
       return;
     }
     // Afterwards, hold the centred world point steady so opening a panel does not
@@ -225,6 +285,18 @@ export class MapScene {
         console.info(`[coi-mapper] scene: uploaded layer "${name}" (${chunks.length} chunks)`);
       }
       if (name === 'entities') this.world.addChild(this.buildTransports(), this.buildPower());
+    }
+
+    if (new URLSearchParams(location.search).get('debug') === '1') {
+      // A texture-free shape covering the map. If this is visible but the layers are not,
+      // the camera is fine and the problem is in the textures.
+      const { width, height } = this.doc.manifest.map;
+      const probe = new Graphics()
+        .rect(0, 0, width, height)
+        .fill({ color: 0xff00ff, alpha: 0.35 })
+        .stroke({ width: Math.max(2, width / 200), color: 0x00ffff });
+      this.world.addChildAt(probe, 0);
+      console.info('[coi-mapper] debug: vector probe added over the map bounds');
     }
 
     this.world.addChild(this.highlight);

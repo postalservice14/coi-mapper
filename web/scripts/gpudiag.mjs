@@ -21,7 +21,7 @@ const page = await browser.newPage({
 });
 
 const events = [];
-page.on('console', (m) => events.push(`console.${m.type()}: ${m.text().slice(0, 200)}`));
+page.on('console', (m) => events.push(`console.${m.type()}: ${m.text().slice(0, 600)}`));
 page.on('pageerror', (e) => events.push(`pageerror: ${e.message.slice(0, 200)}`));
 
 await page.goto(URL + (process.env.SAFE === '1' ? '?safe=1' : ''), { waitUntil: 'networkidle' });
@@ -62,7 +62,7 @@ console.log('  MAX_TEXTURE    ', diag.maxTexture, ' MAX_RENDERBUFFER', diag.maxR
 console.log('  context lost   ', diag.contextLost, ' glError', diag.glError);
 console.log('  camera zoom    ', diag.zoom, ' map span', diag.mapSpan);
 console.log('  canvas png     ', `${(shot.length / 1024).toFixed(0)} KB`, shot.length < 40000 ? '  <-- LIKELY BLANK' : '');
-if (events.length) { console.log('  events:'); for (const e of events.slice(0, 8)) console.log('   ', e); }
+if (events.length) { console.log('  events:'); for (const e of events) console.log('   ', e); }
 
 await browser.close();
 server.kill();
