@@ -3,7 +3,7 @@
 //   Edit the spec and re-run `npm run schema`.
 // </auto-generated>
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const MEMBERS = {
   "manifest": "manifest.json",
@@ -154,6 +154,8 @@ export interface Entity {
   /** Rotation, 0-3 (quarter turns clockwise). */
   rot: number;
   state: EntityState;
+  /** Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity fills its w*h box exactly, which is the common case for machines. Conveyors and pipes snake, so their bounding box is mostly empty and this lists the tiles they really cover. */
+  tiles: number[];
 }
 
 export interface Transport {

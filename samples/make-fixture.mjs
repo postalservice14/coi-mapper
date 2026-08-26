@@ -141,6 +141,28 @@ const byId = Object.fromEntries(PROTOS.map((p) => [p.id, p]));
 const BUILDABLE = PROTOS.filter((p) => !['ConveyorBelt', 'Pipe', 'Pylon'].includes(p.id));
 const STATES = ['Operating', 'Operating', 'Operating', 'Idle', 'Constructing', 'Paused', 'Broken'];
 
+/** Walks a flat [x0,y0,x1,y1,...] polyline into the distinct tiles it passes through. */
+function tracePolyline(points) {
+  const seen = new Set();
+  const tiles = [];
+  const add = (x, y) => {
+    const key = `${x},${y}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    tiles.push([x, y]);
+  };
+
+  for (let i = 0; i + 3 < points.length; i += 2) {
+    let [x, y] = [points[i], points[i + 1]];
+    const [tx, ty] = [points[i + 2], points[i + 3]];
+    // Manhattan walk: axis-aligned like real conveyor runs, rather than a diagonal line.
+    while (x !== tx) { add(x, y); x += Math.sign(tx - x); }
+    while (y !== ty) { add(x, y); y += Math.sign(ty - y); }
+    add(x, y);
+  }
+  return tiles;
+}
+
 // ── factory layout ───────────────────────────────────────────────────────────
 /**
  * Places clusters of machines on flat-enough land, wires each cluster with a conveyor
@@ -219,12 +241,41 @@ function placeEntities(size, terrain, seed) {
     // One conveyor polyline threading the cluster.
     const points = [];
     for (const e of placed) points.push(e.x + Math.floor(e.w / 2), e.y + e.h + 1);
+    const isPipe = rnd() < 0.25;
     transports.push({
       id: nextId++,
-      proto: rnd() < 0.25 ? 'Pipe' : 'ConveyorBelt',
-      kind: rnd() < 0.25 ? 'Pipe' : 'Conveyor',
+      proto: isPipe ? 'Pipe' : 'ConveyorBelt',
+      kind: isPipe ? 'Pipe' : 'Conveyor',
       points,
     });
+
+    // The game exports conveyors and pipes as ordinary entities whose occupied tiles trace
+    // the run, so their bounding box is mostly empty. Mirror that here: a fixture that only
+    // modelled them as network polylines would never exercise the sparse-footprint path.
+    const traced = tracePolyline(points);
+    if (traced.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const [tx, ty] of traced) {
+        if (tx < minX) minX = tx;
+        if (tx > maxX) maxX = tx;
+        if (ty < minY) minY = ty;
+        if (ty > maxY) maxY = ty;
+      }
+      const tiles = [];
+      for (const [tx, ty] of traced) tiles.push(tx - minX, ty - minY);
+      entities.push({
+        id: nextId++,
+        proto: isPipe ? 'Pipe' : 'ConveyorBelt',
+        x: minX,
+        y: minY,
+        w: maxX - minX + 1,
+        h: maxY - minY + 1,
+        rot: 0,
+        state: 'Operating',
+        tiles,
+      });
+      for (const [tx, ty] of traced) occupancy[ty * size + tx] = 1;
+    }
 
     // Mine towers designate the ore around them.
     if (proto.id === 'MineTower' || proto.id === 'ForestryTower') {
@@ -239,6 +290,56 @@ function placeEntities(size, terrain, seed) {
     }
 
     hubs.push(placed[0]);
+  }
+
+  // Trunk runs between distant clusters. These are what make the sparse-footprint case
+  // real: a dog-legged belt across the map has a bounding box of tens of thousands of
+  // tiles while covering only a few hundred, exactly like the game's own long conveyors.
+  // Sparse enough to stay readable: a handful of long hauls, not one per cluster.
+  for (let i = 0; i + 1 < hubs.length; i += 12) {
+    const a = hubs[i];
+    const b = hubs[i + 1];
+    if (!a || !b) continue;
+
+    const ax = a.x + (a.w >> 1);
+    const ay = a.y + (a.h >> 1);
+    const bx = b.x + (b.w >> 1);
+    const by = b.y + (b.h >> 1);
+    if (Math.abs(ax - bx) + Math.abs(ay - by) < 60) continue;   // keep trunks long
+
+    // Route via a mid waypoint so the run turns corners instead of running straight.
+    const midX = rnd() < 0.5 ? ax : bx;
+    const midY = rnd() < 0.5 ? by : ay;
+    const traced = tracePolyline([ax, ay, midX, midY, bx, by]);
+    if (traced.length === 0) continue;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const [tx, ty] of traced) {
+      if (tx < minX) minX = tx;
+      if (tx > maxX) maxX = tx;
+      if (ty < minY) minY = ty;
+      if (ty > maxY) maxY = ty;
+    }
+    const tiles = [];
+    for (const [tx, ty] of traced) tiles.push(tx - minX, ty - minY);
+
+    const isPipe = rnd() < 0.3;
+    entities.push({
+      id: nextId++,
+      proto: isPipe ? 'Pipe' : 'ConveyorBelt',
+      x: minX, y: minY,
+      w: maxX - minX + 1,
+      h: maxY - minY + 1,
+      rot: 0,
+      state: 'Operating',
+      tiles,
+    });
+    transports.push({
+      id: nextId++,
+      proto: isPipe ? 'Pipe' : 'ConveyorBelt',
+      kind: isPipe ? 'Pipe' : 'Conveyor',
+      points: [ax, ay, midX, midY, bx, by],
+    });
   }
 
   // Power spine: chain the cluster hubs together, with a pylon at each.

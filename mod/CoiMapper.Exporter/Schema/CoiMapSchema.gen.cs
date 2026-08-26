@@ -6,7 +6,7 @@
 namespace CoiMapper.Schema {
 
     public static class CoiMapSchema {
-        public const int SchemaVersion = 1;
+        public const int SchemaVersion = 2;
         public const string Manifest = "manifest.json";
         public const string Entities = "entities.json";
         public const string Networks = "networks.json";
@@ -213,6 +213,8 @@ namespace CoiMapper.Schema {
         /// <summary>Rotation, 0-3 (quarter turns clockwise).</summary>
         public int Rot;
         public EntityState State;
+        /// <summary>Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity fills its w*h box exactly, which is the common case for machines. Conveyors and pipes snake, so their bounding box is mostly empty and this lists the tiles they really cover.</summary>
+        public int[] Tiles;
 
         public void WriteTo(JsonWriter w) {
             w.BeginObject();
@@ -224,6 +226,7 @@ namespace CoiMapper.Schema {
             w.Name("h").Value(H);
             w.Name("rot").Value(Rot);
             w.Name("state").Value(State.ToString());
+            w.Name("tiles").BeginArray(); foreach (var v in Tiles ?? new int[0]) { w.Value(v); } w.EndArray();
             w.EndObject();
         }
     }

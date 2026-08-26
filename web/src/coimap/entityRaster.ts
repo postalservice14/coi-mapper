@@ -9,6 +9,7 @@ import { CATEGORY_COLORS } from './schema.gen';
 import type { Entity, Proto } from './schema.gen';
 import { parseHex } from './terrain';
 import type { Rgba } from './terrain';
+import { forEachFootprintTile } from './footprint';
 
 /** Per-state appearance: how much the footprint is dimmed, and any tint applied. */
 const STATE_STYLE: Record<string, { alpha: number; tint?: [number, number, number] }> = {
@@ -48,21 +49,14 @@ export function buildEntityTexture(
     }
     const alpha = Math.round(style.alpha * 255);
 
-    const x1 = Math.min(width, e.x + e.w);
-    const y1 = Math.min(height, e.y + e.h);
-    for (let ty = Math.max(0, e.y); ty < y1; ty++) {
-      const onEdgeY = ty === e.y || ty === y1 - 1;
-      const row = ty * width;
-      for (let tx = Math.max(0, e.x); tx < x1; tx++) {
-        const edge = onEdgeY || tx === e.x || tx === x1 - 1;
-        const k = edge ? EDGE_DARKEN : 1;
-        const o = (row + tx) * 4;
-        rgba[o] = r * k;
-        rgba[o + 1] = g * k;
-        rgba[o + 2] = b * k;
-        rgba[o + 3] = alpha;
-      }
-    }
+    forEachFootprintTile(e, width, height, (tile, isEdge) => {
+      const k = isEdge ? EDGE_DARKEN : 1;
+      const o = tile * 4;
+      rgba[o] = r * k;
+      rgba[o + 1] = g * k;
+      rgba[o + 2] = b * k;
+      rgba[o + 3] = alpha;
+    });
   }
 
   return rgba;

@@ -5,6 +5,7 @@ import { unzipSync } from 'fflate';
 import { MEMBERS, PLANES, SCHEMA_VERSION } from './schema.gen';
 import type { Manifest, Entity, Transport, NetworkEdge, Proto, PlaneName, Networks } from './schema.gen';
 import type { Planes } from './types';
+import { forEachFootprintTile } from './footprint';
 
 const decoder = new TextDecoder();
 const json = <T>(bytes: Uint8Array): T => JSON.parse(decoder.decode(bytes)) as T;
@@ -105,13 +106,7 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
 export function buildTileIndex(entities: Entity[], width: number, height: number): Int32Array {
   const index = new Int32Array(width * height).fill(-1);
   for (let e = 0; e < entities.length; e++) {
-    const { x, y, w, h } = entities[e]!;
-    const x1 = Math.min(width, x + w);
-    const y1 = Math.min(height, y + h);
-    for (let ty = Math.max(0, y); ty < y1; ty++) {
-      const row = ty * width;
-      for (let tx = Math.max(0, x); tx < x1; tx++) index[row + tx] = e;
-    }
+    forEachFootprintTile(entities[e]!, width, height, (tile) => { index[tile] = e; });
   }
   return index;
 }

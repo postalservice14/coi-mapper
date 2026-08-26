@@ -1,4 +1,5 @@
 import { readTile } from '../coimap/tileInfo';
+import { hasSparseFootprint } from '../coimap/footprint';
 import type { WorkerDoc } from '../coimap/types';
 
 interface Props {
@@ -40,7 +41,16 @@ export function Inspector({ doc, selected, onClose }: Props) {
       <section>
         <h3>Placement</h3>
         <Row label="Position" value={`${entity.x}, ${entity.y}`} />
-        <Row label="Footprint" value={`${entity.w} × ${entity.h} tiles`} />
+        <Row
+          label="Footprint"
+          value={
+            // A conveyor's bounding box says almost nothing about it; report the tiles it
+            // really covers and keep the box as secondary context.
+            hasSparseFootprint(entity)
+              ? `${(entity.tiles!.length / 2).toLocaleString()} tiles in ${entity.w} × ${entity.h}`
+              : `${entity.w} × ${entity.h} tiles`
+          }
+        />
         <Row label="Rotation" value={ROTATION_LABEL[entity.rot] ?? `${entity.rot}`} />
         <Row label="State" value={<span className={`state state-${entity.state.toLowerCase()}`}>{entity.state}</span>} />
       </section>

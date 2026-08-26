@@ -8,6 +8,7 @@
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Entity } from '../coimap/schema.gen';
 import type { LayerName, WorkerDoc } from '../coimap/types';
+import { hasSparseFootprint } from '../coimap/footprint';
 
 const MAX_ZOOM = 48;         // screen pixels per tile
 const MIN_ZOOM_FACTOR = 0.6; // relative to the fit-to-screen scale
@@ -231,7 +232,18 @@ export class MapScene {
     const draw = (index: number, color: number, widthPx: number, fillAlpha: number) => {
       const e = this.doc.entities[index];
       if (!e) return;
-      g.rect(e.x, e.y, e.w, e.h);
+
+      if (hasSparseFootprint(e)) {
+        // A snaking conveyor's bounding box is mostly empty, so outlining it would flash a
+        // huge rectangle over unrelated machines. Trace the tiles it actually covers.
+        const tiles = e.tiles!;
+        for (let i = 0; i + 1 < tiles.length; i += 2) {
+          g.rect(e.x + tiles[i]!, e.y + tiles[i + 1]!, 1, 1);
+        }
+      } else {
+        g.rect(e.x, e.y, e.w, e.h);
+      }
+
       if (fillAlpha > 0) g.fill({ color, alpha: fillAlpha });
       g.stroke({ width: widthPx * px, color, alpha: 0.95, alignment: 0.5 });
     };

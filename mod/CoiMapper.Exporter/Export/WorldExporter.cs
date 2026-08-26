@@ -114,7 +114,13 @@ namespace CoiMapper.Export {
             return new MapInfo { Width = width, Height = height, MinHeight = min, MaxHeight = max };
         }
 
-        /// <summary>Ocean plus one entry per terrain material, matching the shifted ids above.</summary>
+        /// <summary>
+        /// Ocean plus one entry per terrain material, matching the shifted ids above.
+        ///
+        /// Colours come from each material's own graphics rather than being guessed from its
+        /// name: the game already knows what dirt, bauxite and forest floor look like, and
+        /// modded materials then work for free.
+        /// </summary>
         private List<Surface> BuildSurfaceLegend(TerrainManager terrain) {
             var list = new List<Surface> {
                 new Surface { Id = 0, Name = "Ocean", Color = "#1b4a6b", Water = true },
@@ -124,14 +130,49 @@ namespace CoiMapper.Export {
             for (int i = 0; i < materials.Length; i++) {
                 var proto = materials[i];
                 string id = proto.Id.Value;
+                // The slim-id manager keeps a phantom entry as a lookup fallback; it is not
+                // a real material and would show up in the legend as noise.
+                if (id.IndexOf("PHANTOM", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+
                 list.Add(new Surface {
                     Id = proto.SlimId.Value + 1,
-                    Name = id,
-                    Color = MaterialPalette.ColorFor(id),
+                    Name = DisplayName(proto, id),
+                    Color = ColorOf(proto, id),
                     Water = false,
                 });
             }
             return list;
+        }
+
+        /// <summary>Hex colour from the material's graphics, falling back to the name palette.</summary>
+        private static string ColorOf(Mafi.Core.Products.TerrainMaterialProto proto, string id) {
+            try {
+                var rgba = proto.Graphics.Color.Rgba;
+                return "#" + rgba.R.ToString("x2") + rgba.G.ToString("x2") + rgba.B.ToString("x2");
+            } catch {
+                return MaterialPalette.ColorFor(id);
+            }
+        }
+
+        /// <summary>
+        /// Localised name where there is one, else the proto id with the "_Terrain" suffix
+        /// dropped and camel case split, so "GrassLush_Terrain" reads as "Grass Lush".
+        /// </summary>
+        private static string DisplayName(Mafi.Core.Products.TerrainMaterialProto proto, string id) {
+            try {
+                string localised = proto.Strings.Name.TranslatedString;
+                if (!string.IsNullOrEmpty(localised)) return localised;
+            } catch { }
+
+            string name = id.EndsWith(Mafi.Core.Products.TerrainMaterialProto.SUFFIX, StringComparison.Ordinal)
+                ? id.Substring(0, id.Length - Mafi.Core.Products.TerrainMaterialProto.SUFFIX.Length)
+                : id;
+            var sb = new System.Text.StringBuilder(name.Length + 4);
+            for (int i = 0; i < name.Length; i++) {
+                if (i > 0 && char.IsUpper(name[i]) && !char.IsUpper(name[i - 1])) sb.Append(' ');
+                sb.Append(name[i]);
+            }
+            return sb.ToString();
         }
 
         // ── entities ──────────────────────────────────────────────────────────
@@ -154,6 +195,11 @@ namespace CoiMapper.Export {
         /// <summary>
         /// Builds one entity record. The footprint comes from the entity's own occupied
         /// tiles rather than its prototype layout, because those are already rotated.
+        ///
+        /// Machines fill their bounding box, so the box alone describes them. Conveyors and
+        /// pipes do not: a belt that snakes across the factory has a bounding box hundreds
+        /// of tiles wide that is almost entirely empty. Those get an explicit tile list, or
+        /// the map would paint them as enormous solid rectangles.
         /// </summary>
         private static SchemaEntity Describe(IStaticEntity entity) {
             var occupied = entity.OccupiedTiles;
@@ -169,20 +215,45 @@ namespace CoiMapper.Export {
                 if (ry > maxY) maxY = ry;
             }
 
+            int w = maxX - minX + 1;
+            int h = maxY - minY + 1;
+
+            // Distinct tiles, since a layout can list several entries per tile (different
+            // vertical extents), and a duplicate would misreport a solid footprint.
+            var covered = new HashSet<int>();
+            for (int i = 0; i < occupied.Length; i++) {
+                covered.Add((occupied[i].RelativeY - minY) * w + (occupied[i].RelativeX - minX));
+            }
+
+            int[] tiles;
+            if (covered.Count >= w * h) {
+                tiles = Empty;                      // fills its box: the box says it all
+            } else {
+                tiles = new int[covered.Count * 2];
+                int t = 0;
+                foreach (int cell in covered) {
+                    tiles[t++] = cell % w;
+                    tiles[t++] = cell / w;
+                }
+            }
+
             var centre = entity.CenterTile;
             return new SchemaEntity {
                 Id = entity.Id.Value,
                 Proto = entity.Prototype.Id.Value,
                 X = centre.X + minX,
                 Y = centre.Y + minY,
-                W = maxX - minX + 1,
-                H = maxY - minY + 1,
+                W = w,
+                H = h,
                 // Occupied tiles already encode rotation, so the footprint is correct without
                 // it; the raw angle is not exposed on IStaticEntity.
                 Rot = 0,
                 State = MapState(entity),
+                Tiles = tiles,
             };
         }
+
+        private static readonly int[] Empty = new int[0];
 
         private static EntityState MapState(IStaticEntity entity) {
             switch (entity.ConstructionState) {

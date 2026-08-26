@@ -5,7 +5,7 @@
  * two sides cannot drift. Edit this file, then run `npm run schema` from the repo root.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 /** A `.coimap` file is a ZIP archive containing these members. */
 export const MEMBERS = {
@@ -107,6 +107,15 @@ export const STRUCTS = {
     { name: 'h',     type: 'int',    doc: 'Footprint height in tiles, after rotation.' },
     { name: 'rot',   type: 'int',    doc: 'Rotation, 0-3 (quarter turns clockwise).' },
     { name: 'state', type: 'EntityState' },
+    {
+      name: 'tiles',
+      type: 'int[]',
+      doc:
+        'Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity ' +
+        'fills its w*h box exactly, which is the common case for machines. Conveyors ' +
+        'and pipes snake, so their bounding box is mostly empty and this lists the ' +
+        'tiles they really cover.',
+    },
   ],
   /** A conveyor or pipe run, as a polyline of tile coordinates. */
   Transport: [

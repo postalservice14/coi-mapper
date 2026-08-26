@@ -28,6 +28,13 @@ namespace CoiMapper.SchemaCheck {
                 new Entity { Id = 2, Proto = "Storage", X = 10, Y = 6, W = 4, H = 4, Rot = 1, State = EntityState.Constructing },
                 // Non-ASCII and quote characters must survive JSON escaping.
                 new Entity { Id = 3, Proto = "Pump \"A\" — ünïcode", X = 20, Y = 12, W = 2, H = 3, Rot = 3, State = EntityState.Broken },
+                // A snaking conveyor: a large bounding box covering only an L-shaped path.
+                // Emitting the box instead would paint a 10x8 slab over unrelated tiles.
+                new Entity {
+                    Id = 4, Proto = "ConveyorT2", X = 30, Y = 20, W = 10, H = 8, Rot = 0,
+                    State = EntityState.Operating,
+                    Tiles = new[] { 0, 0, 1, 0, 2, 0, 3, 0, 3, 1, 3, 2, 3, 3, 4, 3, 5, 3, 6, 3, 7, 3, 8, 3, 9, 3 },
+                },
             };
 
             using (var archive = new CoiMapArchive(path)) {

@@ -22,7 +22,7 @@ const doc = parseCoiMap(new Uint8Array(readFileSync(input)));
 const { width, height } = doc.manifest.map;
 
 check('archive parses', true, `${width}x${height}`);
-check('schema version agrees', doc.manifest.schemaVersion === 1, doc.manifest.schemaVersion);
+check('schema version agrees', doc.manifest.schemaVersion === 2, doc.manifest.schemaVersion);
 check('game info survives', doc.manifest.game.mapName === 'Schema Check' && doc.manifest.game.saveVersion === 287,
   `${doc.manifest.game.mapName} / save ${doc.manifest.game.saveVersion}`);
 
@@ -30,11 +30,22 @@ check('game info survives', doc.manifest.game.mapName === 'Schema Check' && doc.
 check('float round-trip', doc.manifest.map.minHeight === -12.5 && doc.manifest.map.maxHeight === 240.25,
   `${doc.manifest.map.minHeight} … ${doc.manifest.map.maxHeight}`);
 
-check('entities decoded', doc.entities.length === 3, doc.entities.length);
+check('entities decoded', doc.entities.length === 4, doc.entities.length);
+
+// Sparse footprints: the conveyor must cover only its 13 traced tiles, not its 10x8 box.
+const belt = doc.entities.find((e) => e.proto === 'ConveyorT2');
+check('sparse footprint survives', belt?.tiles?.length === 26, `${(belt?.tiles?.length ?? 0) / 2} tiles`);
+const beltIndex = buildTileIndex(doc.entities, width, height);
+const beltAt = (x: number, y: number) => beltIndex[y * width + x] === doc.entities.indexOf(belt!);
+check(
+  'sparse footprint is not rasterised as its box',
+  beltAt(30, 20) && beltAt(33, 22) && beltAt(39, 23) && !beltAt(35, 20) && !beltAt(38, 26),
+  'traced tiles set, interior of the box left clear',
+);
 
 // Enums must arrive as the schema's string names, not integers.
 const states = doc.entities.map((e) => e.state).join(',');
-check('enums encoded as names', states === 'Operating,Constructing,Broken', states);
+check('enums encoded as names', states === 'Operating,Constructing,Broken,Operating', states);
 
 // JSON escaping of quotes, em dash and diacritics.
 const unicode = doc.entities[2]?.proto;
