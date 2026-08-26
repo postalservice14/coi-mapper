@@ -58,6 +58,14 @@ misrendering them.
   than the driver's limit does not fail politely, it drops the context, and on a 2x display any
   window wider than 2048 CSS pixels crosses the smallest limit still in the wild.
 
+- Loading now logs each stage to the console under a `[coi-mapper]` prefix, along with the
+  renderer's name and limits. The failure banner cannot help when the page hangs, because a
+  blocked main thread never paints it; console output written before the hang survives, so
+  the last line logged shows where it stopped.
+- Adds `?safe=1`, which renders the whole map as one small texture per layer at device pixel
+  ratio 1. Deliberately low quality, but it isolates whether a rendering failure is about
+  scale at all.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs

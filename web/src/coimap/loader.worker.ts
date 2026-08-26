@@ -26,9 +26,21 @@ const CHUNK = 1024;
  */
 const TEXTURE_BUDGET = 96 * 1024 * 1024;
 
+/** Longest edge a single layer may have in safe mode, so each fits one chunk. */
+const SAFE_MODE_EDGE = 1024;
+
 /** Integer downsample factor needed to fit `layerCount` full-map layers in the budget. */
-export function downsampleFactor(width: number, height: number, layerCount: number): number {
+export function downsampleFactor(
+  width: number,
+  height: number,
+  layerCount: number,
+  safeMode = false,
+): number {
   let factor = 1;
+  if (safeMode) {
+    while (Math.max(width, height) / factor > SAFE_MODE_EDGE) factor++;
+    return factor;
+  }
   while ((width / factor) * (height / factor) * 4 * layerCount > TEXTURE_BUDGET) factor++;
   return factor;
 }
@@ -85,6 +97,11 @@ async function toChunks(rgba: Rgba, width: number, height: number, factor: numbe
 
 export interface LoaderRequest {
   archive: ArrayBuffer;
+  /**
+   * Forces the most conservative rendering the app can do: the whole map as one small
+   * texture per layer. Slow to look at, but it isolates whether a failure is about scale.
+   */
+  safeMode?: boolean;
 }
 
 export type LoaderResponse =
@@ -94,15 +111,27 @@ export type LoaderResponse =
 
 const report = (progress: LoadProgress) => self.postMessage({ progress } satisfies LoaderResponse);
 
+/**
+ * Stage logging that survives a blocked main thread.
+ *
+ * When the page hangs, React cannot paint, so the failure banner never appears. Console
+ * output written before the hang still does — so the last line logged pinpoints where it
+ * stopped.
+ */
+const stage = (message: string) => console.info(`[coi-mapper] worker: ${message}`);
+
 self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
   try {
+    stage(`opening archive (${(event.data.archive.byteLength / 1e6).toFixed(1)} MB)`);
     report({ stage: 'unzipping' });
     const parsed = parseCoiMap(new Uint8Array(event.data.archive));
     const { width, height } = parsed.manifest.map;
 
+    stage(`parsed: ${width}x${height} tiles, ${parsed.entities.length} entities`);
     report({ stage: 'indexing', detail: `${parsed.entities.length.toLocaleString()} entities` });
     const tileToEntity = buildTileIndex(parsed.entities, width, height);
 
+    stage('indexed; rasterising layers');
     report({ stage: 'rendering', detail: `${width}x${height} tiles` });
     const rasters = {
       ...buildTextures(parsed.planes, parsed.manifest),
@@ -112,7 +141,9 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
     // Only upload layers that have something to draw; a null raster means the export
     // carried no plane for it.
     const present = Object.values(rasters).filter(Boolean).length;
-    const factor = downsampleFactor(width, height, present);
+    const safeMode = event.data.safeMode === true;
+    if (safeMode) stage('SAFE MODE: one small texture per layer');
+    const factor = downsampleFactor(width, height, present, safeMode);
     if (factor > 1) {
       report({ stage: 'rendering', detail: `downsampling ${factor}x to fit in GPU memory` });
     }
@@ -121,6 +152,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
     for (const [name, rgba] of Object.entries(rasters)) {
       if (!rgba) continue;
       layers[name as keyof WorkerDoc['layers']] = await toChunks(rgba, width, height, factor);
+      stage(`layer "${name}": ${layers[name as keyof WorkerDoc['layers']]!.length} chunks at ${factor}x`);
     }
 
     const doc: WorkerDoc = {
@@ -136,6 +168,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
       thumbnail: parsed.thumbnail,
     };
 
+    stage('handing off to the renderer');
     report({ stage: 'done' });
     // Hand the large buffers over rather than copying them.
     const transfer: Transferable[] = [

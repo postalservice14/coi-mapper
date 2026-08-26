@@ -23,8 +23,12 @@ const ZOOM_PER_WHEEL_LINE = 1.0015;
  */
 const MAX_BACKING_EDGE = 4096;
 
+/** True when the page was opened with ?safe=1. */
+const isSafeMode = () => new URLSearchParams(location.search).get('safe') === '1';
+
 /** Device pixel ratio that keeps the backing store inside {@link MAX_BACKING_EDGE}. */
 function safeResolution(width: number, height: number): number {
+  if (isSafeMode()) return 1;
   const wanted = Math.min(window.devicePixelRatio || 1, 2);
   const longest = Math.max(width, height, 1);
   return Math.min(wanted, MAX_BACKING_EDGE / longest);
@@ -46,6 +50,31 @@ export interface TileHit {
   ty: number;
   /** Index into `doc.entities`, or -1 for bare terrain. */
   entityIndex: number;
+}
+
+/**
+ * Logs renderer capabilities as soon as the context exists.
+ *
+ * This runs before anything that could hang or lose the context, so the numbers are in the
+ * console either way — which the failure banner cannot promise, since a blocked main thread
+ * never paints it.
+ */
+function logCapabilities(app: Application, canvas: HTMLCanvasElement, host: HTMLElement) {
+  try {
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
+    const info = gl?.getExtension('WEBGL_debug_renderer_info');
+    console.info('[coi-mapper] renderer:', {
+      renderer: gl && info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown',
+      maxTexture: gl?.getParameter(gl.MAX_TEXTURE_SIZE),
+      maxRenderbuffer: gl?.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+      host: `${host.clientWidth}x${host.clientHeight}`,
+      backing: `${canvas.width}x${canvas.height}`,
+      resolution: app.renderer.resolution,
+      dpr: window.devicePixelRatio,
+    });
+  } catch (err) {
+    console.warn('[coi-mapper] renderer: capability query failed', err);
+  }
 }
 
 export class MapScene {
@@ -87,8 +116,11 @@ export class MapScene {
       preference: 'webgl',
     });
 
+    logCapabilities(app, canvas, host);
+
     const scene = new MapScene(app, doc, host);
     scene.build();
+    console.info('[coi-mapper] scene: built, waiting for first fit');
     // No fit here: the element may not have its final size yet. ResizeObserver fires
     // once as soon as it starts observing, and that callback performs the initial fit
     // against the settled layout.
@@ -125,6 +157,7 @@ export class MapScene {
       if (!this.fitted) {
         this.fitted = true;
         this.fitToMap();
+        console.info(`[coi-mapper] scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
         return;
       }
       // Afterwards, hold the centred world point steady so opening a panel does not
@@ -162,6 +195,7 @@ export class MapScene {
         }
         this.sprites.set(name, container);
         this.world.addChild(container);
+        console.info(`[coi-mapper] scene: uploaded layer "${name}" (${chunks.length} chunks)`);
       }
       if (name === 'entities') this.world.addChild(this.buildTransports(), this.buildPower());
     }

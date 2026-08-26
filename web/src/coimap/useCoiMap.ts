@@ -41,7 +41,10 @@ export function useCoiMap() {
 
     try {
       const archive = await file.arrayBuffer();
-      worker.postMessage({ archive } satisfies LoaderRequest, [archive]);
+      // ?safe=1 forces the most conservative rendering path, for machines where the
+      // normal one fails.
+      const safeMode = new URLSearchParams(location.search).get('safe') === '1';
+      worker.postMessage({ archive, safeMode } satisfies LoaderRequest, [archive]);
     } catch (err) {
       setState((s) => ({ ...s, error: `Could not read ${file.name}: ${(err as Error).message}`, progress: null }));
     }

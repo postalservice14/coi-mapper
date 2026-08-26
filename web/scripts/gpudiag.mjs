@@ -24,7 +24,7 @@ const events = [];
 page.on('console', (m) => events.push(`console.${m.type()}: ${m.text().slice(0, 200)}`));
 page.on('pageerror', (e) => events.push(`pageerror: ${e.message.slice(0, 200)}`));
 
-await page.goto(URL, { waitUntil: 'networkidle' });
+await page.goto(URL + (process.env.SAFE === '1' ? '?safe=1' : ''), { waitUntil: 'networkidle' });
 await page.evaluate(() => {
   const c = document.createElement('canvas');
   window.__lost = [];
