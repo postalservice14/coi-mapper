@@ -24,13 +24,20 @@ namespace CoiMapper.Export {
         /// ground that has been mined or dumped, which is worth seeing on the map.
         /// </summary>
         private static readonly string[][] NaturalGround = {
-            // Vegetation
-            new[] { "GrassLush",        "#6f9440" },
-            new[] { "GrassNoDetails",   "#5f7f38" },
-            new[] { "ForestFloor",      "#4a5c30" },
-            new[] { "ForestGrass",      "#5c7a38" },
-            new[] { "ForestDirt",       "#5a4a30" },
-            new[] { "Grass",            "#5d7a3a" },
+            // Vegetation. The bare "Flowers*" materials are grass in bloom — the game calls
+            // them "Grass (red flowers)" and so on — so they stay green with a hint of the
+            // bloom colour rather than reading as bare soil.
+            new[] { "GrassLush",           "#6f9440" },
+            new[] { "GrassNoDetails",      "#5f7f38" },
+            new[] { "ForestFloor",         "#4a5c30" },
+            new[] { "ForestGrass",         "#5c7a38" },
+            new[] { "ForestDirt",          "#5a4a30" },
+            new[] { "FlowersPurpleLush",   "#6d8f52" },
+            new[] { "FlowersYellowLush",   "#7b9a44" },
+            new[] { "FlowersRed",          "#6c8340" },
+            new[] { "FlowersWhite",        "#6b8a4c" },
+            new[] { "Flowers",             "#688540" },
+            new[] { "Grass",               "#5d7a3a" },
 
             // Soils
             new[] { "DirtFlowersPurple", "#7a6250" },
@@ -42,6 +49,8 @@ namespace CoiMapper.Export {
             new[] { "DirtBare",          "#7a6242" },
             new[] { "Dirt",              "#6b5334" },
             new[] { "Compost",           "#4c3a24" },
+            new[] { "FarmGround",        "#7d6136" },   // tilled, distinct from bare dirt
+            new[] { "LandfillOld",       "#6a6152" },
 
             // Rock and aggregate
             new[] { "RockNoGrassCover", "#847d70" },

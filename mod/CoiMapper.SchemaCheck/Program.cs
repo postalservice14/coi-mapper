@@ -13,35 +13,55 @@ namespace CoiMapper.SchemaCheck {
         private const int Height = 48;
 
         /// <summary>
-        /// Real terrain material ids from Mafi.Base.Ids.TerrainMaterials, so the palette can be
-        /// checked against what the game actually has rather than invented names.
+        /// Natural ground, taken from Mafi.Base.Ids.TerrainMaterials plus the few defined in
+        /// core. Every one of these MUST resolve to a curated colour: the game's own colour is
+        /// a particle tint that renders most of them as the same saddle brown.
         /// </summary>
-        private static readonly string[] RealMaterialIds = {
-            "Grass_Terrain", "GrassLush_Terrain", "GrassNoDetails_Terrain",
-            "ForestFloor_Terrain", "ForestGrass_Terrain", "ForestDirt_Terrain",
-            "Dirt_Terrain", "DirtBare_Terrain", "DirtLush_Terrain", "DirtNoDetails_Terrain",
-            "DirtFlowersPurpleLush_Terrain", "DirtFlowersRed_Terrain", "DirtFlowersWhite_Terrain",
-            "DirtFlowersYellowLush_Terrain", "Compost_Terrain",
-            "Rock_Terrain", "RockDisrupted_Terrain", "RockNoGrassCover_Terrain",
-            "HardenedRock_Terrain", "Bedrock_Terrain", "Gravel_Terrain", "Cobblestone_Terrain",
-            "Sand_Terrain", "SandDisrupted_Terrain", "ManufacturedSand_Terrain",
-            // Not natural ground: these must fall through to the game's own colour.
-            "Bauxite_Terrain", "Coal_Terrain", "CopperOre_Terrain", "IronOre_Terrain",
-            "GoldOre_Terrain", "Quartz_Terrain", "TitaniumOre_Terrain", "UraniumOre_Terrain",
-            "Limestone_Terrain", "Slag_Terrain", "RedMud_Terrain", "Sulfur_Terrain",
+        private static readonly string[] NaturalGroundIds = {
+            "Grass", "GrassLush", "GrassNoDetails",
+            "ForestFloor", "ForestDirt", "ForestGrass",
+            "FlowersPurpleLush", "FlowersRed", "FlowersWhite", "FlowersYellowLush",
+            "Dirt", "DirtBare", "DirtLush", "DirtNoDetails",
+            "DirtFlowersPurpleLush", "DirtFlowersRed", "DirtFlowersWhite", "DirtFlowersYellowLush",
+            "Compost", "FarmGround", "LandfillOld",
+            "Rock", "RockDisrupted", "RockNoGrassCover", "HardenedRock", "Bedrock",
+            "Gravel", "Cobblestone",
+            "Sand", "SandDisrupted", "ManufacturedSand",
+        };
+
+        /// <summary>
+        /// Ores and processed materials. These must fall through to the game's colour, which
+        /// is genuinely distinct for them, so modded materials work without a palette entry.
+        /// </summary>
+        private static readonly string[] DeferredIds = {
+            "Bauxite", "BauxiteCrushed", "BauxiteDisrupted", "Coal", "CoalDisrupted",
+            "CopperOre", "IronOre", "GoldOre", "Quartz", "TitaniumOre", "UraniumOre",
+            "UraniumDepleted", "Limestone", "LimestoneDisrupted", "Slag", "SlagCrushed",
         };
 
         private static int DumpPalette() {
-            int natural = 0;
-            Console.WriteLine("  id                                natural?  colour");
-            foreach (var id in RealMaterialIds) {
+            const string suffix = "_Terrain";
+            var failures = 0;
+
+            Console.WriteLine("  natural ground — every one must be curated");
+            foreach (var name in NaturalGroundIds) {
                 string hex;
-                bool isNatural = MaterialPalette.TryNaturalColor(id, out hex);
-                if (isNatural) natural++;
-                Console.WriteLine($"  {id,-34}{(isNatural ? "yes" : "no "),-10}{hex ?? "(game colour)"}");
+                bool ok = MaterialPalette.TryNaturalColor(name + suffix, out hex);
+                if (!ok) failures++;
+                Console.WriteLine($"    {(ok ? "ok  " : "FAIL")}  {name,-24}{hex ?? "(fell through to the game tint)"}");
             }
-            Console.WriteLine($"\n  {natural} curated, {RealMaterialIds.Length - natural} deferred to the game");
-            return 0;
+
+            Console.WriteLine("\n  ores and processed — must defer to the game");
+            foreach (var name in DeferredIds) {
+                string hex;
+                bool curated = MaterialPalette.TryNaturalColor(name + suffix, out hex);
+                if (curated) failures++;
+                Console.WriteLine($"    {(curated ? "FAIL" : "ok  ")}  {name,-24}{(curated ? hex + " (should defer)" : "game colour")}");
+            }
+
+            Console.WriteLine($"\n  {NaturalGroundIds.Length + DeferredIds.Length - failures}/" +
+                              $"{NaturalGroundIds.Length + DeferredIds.Length} palette checks passed");
+            return failures == 0 ? 0 : 1;
         }
 
         public static int Main(string[] args) {

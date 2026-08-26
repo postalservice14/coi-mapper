@@ -22,6 +22,9 @@ misrendering them.
   and everything else keep the game's colour, which is distinct and correct for them.
 - Palette matching is by id prefix rather than substring. `RockNoGrassCover` contains
   "Grass", so rock faces were coming out lawn green.
+- The palette missed the bare `Flowers*` materials, which the game presents as grass in bloom
+  ("Grass (red flowers)"), plus `FarmGround` and `LandfillOld`. All were falling through to
+  the saddle brown particle tint.
 
 ### Planned
 
