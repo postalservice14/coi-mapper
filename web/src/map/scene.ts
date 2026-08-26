@@ -79,28 +79,19 @@ export class MapScene {
     // once as soon as it starts observing, and that callback performs the initial fit
     // against the settled layout.
     scene.observeHost();
-    scene.releaseSourceBitmaps();
     return scene;
   }
 
-  /**
-   * Frees the ImageBitmaps once their pixels are on the GPU.
-   *
-   * Chrome backs ImageBitmap with GPU memory, so holding them alongside the textures Pixi
-   * builds from them doubles the map's footprint — 220 MB rather than 110 MB on a large
-   * base, which is enough to lose the WebGL context outright. Rendering once forces the
-   * upload, after which the source is dead weight.
-   *
-   * The trade is that a lost context cannot be repopulated from these sources, but
-   * recovering from context loss already means reloading the map.
-   */
-  private releaseSourceBitmaps() {
-    this.app.render();
-    for (const chunks of Object.values(this.doc.layers)) {
-      if (!chunks) continue;
-      for (const chunk of chunks) chunk.bitmap.close();
-    }
-  }
+  // Note: the layers' source ImageBitmaps are deliberately NOT closed after upload.
+  //
+  // Doing so looks like an easy way to halve GPU memory, since Chrome backs ImageBitmap
+  // with GPU memory and Pixi allocates its own texture from each. But Pixi uploads lazily,
+  // on the first frame that actually draws a sprite — and the initial fit happens in a
+  // ResizeObserver callback, which runs after this constructor returns. Closing the
+  // sources before that first real frame leaves every texture permanently unuploadable,
+  // and Pixi then retries forever: a black canvas pinned at 100% CPU.
+  //
+  // The texture budget in the loader keeps the doubled footprint affordable instead.
 
   /** Keeps the renderer matched to its container, preserving the centred world point. */
   private observeHost() {

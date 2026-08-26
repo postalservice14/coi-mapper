@@ -37,10 +37,15 @@ misrendering them.
 - Layer toggles for data an export does not contain are shown disabled and marked "not
   exported", rather than appearing to work and doing nothing.
 
-- **ImageBitmaps were never released.** Chrome backs `ImageBitmap` with GPU memory, so
-  holding every layer's source alongside the textures Pixi builds from them doubled the
-  map's footprint — 220 MB rather than the 110 MB being reported. Sources are now closed
-  once the first render has forced the upload.
+- **Closing layer source bitmaps hung the page.** Freeing each `ImageBitmap` after upload
+  looks like an easy way to halve GPU memory, but Pixi uploads lazily — on the first frame
+  that actually draws a sprite — and the initial fit happens in a `ResizeObserver` callback
+  that runs later. Closing the sources first left every texture permanently unuploadable and
+  Pixi retrying forever: a black canvas pinned at 100% CPU with the tab unresponsive. The
+  sources are kept; the texture budget below makes the doubled footprint affordable instead.
+- The smoke test now checks the page stays responsive after a map loads, measuring
+  main-thread latency and frame rate. A screenshot-only check cannot tell a rendered map
+  from a renderer spinning on an impossible upload.
 - Layer rasters are downsampled when a map exceeds a 96 MB texture budget, rather than
   failing to draw. Downsampling keeps the most opaque sample in each block so single-tile
   conveyors survive, and the status bar says when it is in effect.

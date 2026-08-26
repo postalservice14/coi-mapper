@@ -87,6 +87,29 @@ try {
   });
   check('map is fitted to the viewport', span.fill > 0.9 && span.fill <= 1.0, `fills ${(span.fill * 100).toFixed(0)}% of the constrained axis`);
 
+  // The renderer must also leave the page usable. A texture that can never finish
+  // uploading makes Pixi retry every frame: pixels appear, but the main thread pins at
+  // 100% CPU and the tab goes unresponsive — invisible to a screenshot-only check.
+  const responsive = await (async () => {
+    const started = Date.now();
+    await page.evaluate(() => 1);
+    const latency = Date.now() - started;
+    const frames = await page.evaluate(
+      () => new Promise((resolve) => {
+        let n = 0;
+        const t0 = performance.now();
+        const tick = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(tick); else resolve(n); };
+        requestAnimationFrame(tick);
+      }),
+    );
+    return { latency, frames };
+  })();
+  check(
+    'page stays responsive',
+    responsive.latency < 500 && responsive.frames >= 20,
+    `main thread replied in ${responsive.latency} ms, ${responsive.frames} frames in 1 s`,
+  );
+
   await page.screenshot({ path: `${outDir}/2-map.png` });
 
   // Hovering should populate the status bar with tile data.
