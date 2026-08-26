@@ -3,18 +3,30 @@ import type { Manifest, Entity, Transport, NetworkEdge, Proto, PlaneName } from 
 /** Raster planes, decoded into typed arrays. Optional planes may be absent. */
 export type Planes = Partial<Record<PlaneName, Uint8Array | Uint16Array>>;
 
+/** One piece of a layer's raster, positioned in tile coordinates. */
+export interface LayerChunk {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  bitmap: ImageBitmap;
+}
+
 /**
  * Rendered map layers, as GPU-ready bitmaps.
  *
- * Overlay layers are absent when the export has no plane behind them. On a 13.8M-tile map
- * each layer is 55 MB of texture, so uploading empty ones is memory a large base cannot
- * spare — and on real hardware that is the difference between a map and a black rectangle.
+ * Each layer is split into chunks rather than uploaded as one image. A 3584x3840 map is a
+ * single 55 MB texture per layer, and drivers lose the WebGL context trying to allocate
+ * that in one contiguous block even with memory to spare. Chunks keep every allocation
+ * small and each upload short enough not to trip a driver watchdog.
+ *
+ * Overlay layers are absent entirely when the export has no plane behind them.
  */
 export interface MapLayers {
-  terrain: ImageBitmap;
-  entities: ImageBitmap;
-  deposits?: ImageBitmap;
-  designations?: ImageBitmap;
+  terrain: LayerChunk[];
+  entities: LayerChunk[];
+  deposits?: LayerChunk[];
+  designations?: LayerChunk[];
 }
 
 export type LayerName = keyof MapLayers | 'transports' | 'power';

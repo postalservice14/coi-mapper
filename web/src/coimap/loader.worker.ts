@@ -8,7 +8,32 @@
 import { parseCoiMap, buildTileIndex, CoiMapError } from './parse';
 import { buildTextures } from './terrain';
 import { buildEntityTexture } from './entityRaster';
-import type { LoadProgress, WorkerDoc } from './types';
+import type { LayerChunk, LoadProgress, WorkerDoc } from './types';
+import type { Rgba } from './terrain';
+
+/**
+ * Maximum edge of a single uploaded texture. Well under every GPU's limit, and small
+ * enough that a driver can always find a contiguous block for it.
+ */
+const CHUNK = 1024;
+
+/** Slices a full-map raster into chunk-sized bitmaps. */
+async function toChunks(rgba: Rgba, width: number, height: number): Promise<LayerChunk[]> {
+  const chunks: LayerChunk[] = [];
+  for (let y0 = 0; y0 < height; y0 += CHUNK) {
+    for (let x0 = 0; x0 < width; x0 += CHUNK) {
+      const w = Math.min(CHUNK, width - x0);
+      const h = Math.min(CHUNK, height - y0);
+      const sub = new Uint8ClampedArray(w * h * 4);
+      for (let y = 0; y < h; y++) {
+        const from = ((y0 + y) * width + x0) * 4;
+        sub.set(rgba.subarray(from, from + w * 4), y * w * 4);
+      }
+      chunks.push({ x: x0, y: y0, w, h, bitmap: await createImageBitmap(new ImageData(sub, w, h)) });
+    }
+  }
+  return chunks;
+}
 
 export interface LoaderRequest {
   archive: ArrayBuffer;
@@ -41,7 +66,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
     const layers = {} as WorkerDoc['layers'];
     for (const [name, rgba] of Object.entries(rasters)) {
       if (!rgba) continue;
-      layers[name as keyof WorkerDoc['layers']] = await createImageBitmap(new ImageData(rgba, width, height));
+      layers[name as keyof WorkerDoc['layers']] = await toChunks(rgba, width, height);
     }
 
     const doc: WorkerDoc = {
@@ -60,7 +85,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
     // Hand the large buffers over rather than copying them.
     const transfer: Transferable[] = [
       tileToEntity.buffer,
-      ...Object.values(layers).filter(Boolean),
+      ...Object.values(layers).flat().map((c) => c.bitmap),
       ...Object.values(doc.planes).map((p) => p!.buffer),
     ];
     self.postMessage({ ok: true, doc } satisfies LoaderResponse, { transfer });

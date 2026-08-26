@@ -62,7 +62,9 @@ export class MapScene {
       width: Math.max(1, host.clientWidth),
       height: Math.max(1, host.clientHeight),
       backgroundColor: 0x0d1117,
-      antialias: true,
+      // No multisampling: it buys nothing on a nearest-neighbour tile raster, and on a
+      // large canvas the multisampled backbuffer costs more memory than the map's textures.
+      antialias: false,
       // Capped rather than the raw device ratio: on a 3x display a large window would
       // allocate a framebuffer several times the size of the map's own textures, which on
       // a big base is the difference between fitting in GPU memory and not.
@@ -116,16 +118,23 @@ export class MapScene {
     // width*height*4 bytes of texture — 55 MB on a 13.8M-tile map — so uploading empty
     // overlays can exhaust GPU memory and leave nothing on screen at all.
     for (const name of ['terrain', 'deposits', 'designations', 'entities'] as const) {
-      const bitmap = layers[name];
-      if (bitmap) {
-        const texture = Texture.from(bitmap);
-        // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
-        texture.source.scaleMode = 'nearest';
-        const sprite = new Sprite(texture);
-        sprite.width = this.doc.manifest.map.width;
-        sprite.height = this.doc.manifest.map.height;
-        this.sprites.set(name, sprite);
-        this.world.addChild(sprite);
+      const chunks = layers[name];
+      if (chunks && chunks.length > 0) {
+        // One container per layer holding a sprite per chunk, so toggling still works on
+        // the layer as a whole.
+        const container = new Container();
+        for (const chunk of chunks) {
+          const texture = Texture.from(chunk.bitmap);
+          // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
+          texture.source.scaleMode = 'nearest';
+          const sprite = new Sprite(texture);
+          sprite.position.set(chunk.x, chunk.y);
+          sprite.width = chunk.w;
+          sprite.height = chunk.h;
+          container.addChild(sprite);
+        }
+        this.sprites.set(name, container);
+        this.world.addChild(container);
       }
       if (name === 'entities') this.world.addChild(this.buildTransports(), this.buildPower());
     }
