@@ -14,6 +14,45 @@ interface Props {
   focus: { tx: number; ty: number } | null;
 }
 
+/**
+ * Collects what actually matters when the renderer fails: the real texture footprint
+ * (not the map's nominal size), the canvas backing store, and the driver's own limits.
+ * A context that is already lost refuses most queries, so every read is defensive.
+ */
+function readDiagnostics(canvas: HTMLCanvasElement, doc: WorkerDoc): string[] {
+  const { width, height } = doc.manifest.map;
+  const scale = doc.textureScale || 1;
+  const layerNames = Object.keys(doc.layers);
+  const chunks = Object.values(doc.layers).reduce((n, c) => n + (c?.length ?? 0), 0);
+  const textureBytes = layerNames.length * Math.ceil(width / scale) * Math.ceil(height / scale) * 4;
+  const backing = canvas.width * canvas.height * 4;
+
+  const out = [
+    `map	${width.toLocaleString()} × ${height.toLocaleString()} tiles`,
+    `layers	${layerNames.join(', ') || 'none'}`,
+    `texture	${(textureBytes / 1e6).toFixed(1)} MB in ${chunks} chunks, ${scale}× downsampled`,
+    `canvas	${canvas.width} × ${canvas.height} backing (${(backing / 1e6).toFixed(1)} MB), DPR ${window.devicePixelRatio}`,
+  ];
+
+  try {
+    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
+    if (gl) {
+      const info = gl.getExtension('WEBGL_debug_renderer_info');
+      out.push(`renderer	${info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : 'unavailable'}`);
+      out.push(
+        `limits	max texture ${gl.getParameter(gl.MAX_TEXTURE_SIZE)}, ` +
+          `max renderbuffer ${gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)}`,
+      );
+      out.push(`context	${gl.isContextLost() ? 'lost' : 'alive'}`);
+    } else {
+      out.push('renderer	no WebGL context could be obtained');
+    }
+  } catch (err) {
+    out.push(`renderer	query failed: ${(err as Error)?.message ?? String(err)}`);
+  }
+  return out;
+}
+
 /** Pointer travel, in pixels, above which a press counts as a drag rather than a click. */
 const DRAG_THRESHOLD = 4;
 
@@ -22,6 +61,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
   const sceneRef = useRef<MapScene | null>(null);
   const [ready, setReady] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<string[]>([]);
   const hoveredRef = useRef(-1);
 
   // Build the scene once per document.
@@ -37,10 +77,8 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
     // it rather than reporting an allocation failure, and the canvas simply goes black.
     const onContextLost = (e: Event) => {
       e.preventDefault();
-      setFailure(
-        'The graphics context was lost, which usually means the map is too large for the ' +
-          'available GPU memory. Closing other tabs and reloading often helps.',
-      );
+      setFailure('The graphics context was lost.');
+      setDiagnostics(readDiagnostics(canvas, doc));
     };
     canvas.addEventListener('webglcontextlost', onContextLost);
 
@@ -57,6 +95,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
         // Without this the promise rejects unhandled and the canvas stays black with no
         // indication of why.
         setFailure(`Could not start the map renderer: ${(err as Error)?.message ?? String(err)}`);
+        setDiagnostics(readDiagnostics(canvas, doc));
       });
 
     return () => {
@@ -184,13 +223,20 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
         <div className="map-failure" role="alert">
           <h2>The map could not be drawn</h2>
           <p>{failure}</p>
-          <p className="muted">
-            {doc.manifest.map.width.toLocaleString()} × {doc.manifest.map.height.toLocaleString()} tiles
-            {' · '}
-            {Object.keys(doc.layers).length} layers
-            {' · '}
-            {((doc.manifest.map.width * doc.manifest.map.height * 4 * Object.keys(doc.layers).length) / 1e6).toFixed(0)} MB of texture
-          </p>
+          <table className="diagnostics">
+            <tbody>
+              {diagnostics.map((line) => {
+                const [label, ...rest] = line.split('\t');
+                return (
+                  <tr key={label}>
+                    <th>{label}</th>
+                    <td>{rest.join(' ')}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <p className="muted">Please include these figures when reporting the problem.</p>
         </div>
       )}
     </>

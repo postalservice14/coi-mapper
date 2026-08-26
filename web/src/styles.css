@@ -208,3 +208,9 @@ kbd {
 .map-failure p { margin: 0; max-width: 46ch; }
 
 .toggle.unavailable { opacity: 0.45; cursor: default; }
+
+.diagnostics { border-collapse: collapse; font-size: 13px; margin: 4px 0 8px; }
+.diagnostics th {
+  text-align: right; padding: 2px 10px 2px 0; color: var(--muted); font-weight: 500; vertical-align: top;
+}
+.diagnostics td { text-align: left; padding: 2px 0; font-family: ui-monospace, Menlo, monospace; font-size: 12px; }

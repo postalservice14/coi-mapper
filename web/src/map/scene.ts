@@ -13,6 +13,22 @@ import { hasSparseFootprint } from '../coimap/footprint';
 const MAX_ZOOM = 48;         // screen pixels per tile
 const MIN_ZOOM_FACTOR = 0.6; // relative to the fit-to-screen scale
 const ZOOM_PER_WHEEL_LINE = 1.0015;
+
+/**
+ * Largest canvas backing-store edge we will ask for.
+ *
+ * A renderbuffer bigger than the driver's limit does not fail politely — the context is
+ * simply lost. 4096 is the smallest limit still in the wild, and on a 2x display a window
+ * wider than 2048 CSS pixels crosses it, which is an ordinary maximised window.
+ */
+const MAX_BACKING_EDGE = 4096;
+
+/** Device pixel ratio that keeps the backing store inside {@link MAX_BACKING_EDGE}. */
+function safeResolution(width: number, height: number): number {
+  const wanted = Math.min(window.devicePixelRatio || 1, 2);
+  const longest = Math.max(width, height, 1);
+  return Math.min(wanted, MAX_BACKING_EDGE / longest);
+}
 /** Fraction of the viewport the map occupies when fitted. */
 const FIT_MARGIN = 0.96;
 
@@ -65,10 +81,8 @@ export class MapScene {
       // No multisampling: it buys nothing on a nearest-neighbour tile raster, and on a
       // large canvas the multisampled backbuffer costs more memory than the map's textures.
       antialias: false,
-      // Capped rather than the raw device ratio: on a 3x display a large window would
-      // allocate a framebuffer several times the size of the map's own textures, which on
-      // a big base is the difference between fitting in GPU memory and not.
-      resolution: Math.min(window.devicePixelRatio, 2),
+      // Capped both by device ratio and by absolute backing size; see safeResolution.
+      resolution: safeResolution(host.clientWidth, host.clientHeight),
       autoDensity: true,
       preference: 'webgl',
     });
@@ -104,7 +118,9 @@ export class MapScene {
         x: (before.width / 2 - this.world.x) / this.zoom,
         y: (before.height / 2 - this.world.y) / this.zoom,
       };
-      this.app.renderer.resize(rect.width, rect.height);
+      // Recompute the resolution too: growing the window can otherwise push the backing
+      // store past the driver's renderbuffer limit and drop the context.
+      this.app.renderer.resize(rect.width, rect.height, safeResolution(rect.width, rect.height));
 
       if (!this.fitted) {
         this.fitted = true;

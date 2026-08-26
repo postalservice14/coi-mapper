@@ -50,6 +50,14 @@ misrendering them.
   failing to draw. Downsampling keeps the most opaque sample in each block so single-tile
   conveyors survive, and the status bar says when it is in effect.
 
+- The renderer-failure banner reported the map's nominal texture size rather than the actual
+  one, so a 2x downsampled map still claimed 110 MB when it was using 27.5 MB. It now reports
+  measured figures — real texture bytes, chunk count, canvas backing store, the driver's
+  renderer string and its texture and renderbuffer limits.
+- The canvas backing store is capped at 4096 pixels on its longest edge. A renderbuffer larger
+  than the driver's limit does not fail politely, it drops the context, and on a 2x display any
+  window wider than 2048 CSS pixels crosses the smallest limit still in the wild.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs
