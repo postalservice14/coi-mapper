@@ -14,6 +14,18 @@ misrendering them.
 
 ### Added
 
+- **The exporter now writes deposits and designations.** Deposits are the game's *virtual*
+  resources — the oil and water bodies a pump draws from, not ores, which are ordinary terrain
+  materials the surface plane already carries — and come with a legend and a per-tile richness
+  taken from each body's thickness. Designations carry mining and dumping, decided per tile:
+  a designation holds a target height rather than a mine-or-dump flag, so one drawn across a
+  slope correctly produces both. Player-placed surface designations are included as well.
+  Forestry and unreachable keep their bits reserved but are not written — forestry is a
+  tower's managed area rather than a terrain designation, and unreachable is per-vehicle
+  pathfinding state, so neither has a map-wide set to read. Each plane is written inside its
+  own guard: they are optional in the format, so a manager renamed by a future game version
+  costs one layer instead of the whole export.
+
 - **Rotate the map in 90° steps**, from a pair of buttons floated over the bottom-right of the
   map or with the `[` and `]` keys. A base is rarely built to suit north-up, and the in-game
   camera turns freely, so this makes the two easier to line up. Only the view turns: tile

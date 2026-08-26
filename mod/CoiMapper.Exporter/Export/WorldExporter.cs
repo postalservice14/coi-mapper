@@ -37,6 +37,9 @@ namespace CoiMapper.Export {
                 List<Surface> surfaces;
                 var map = WriteTerrain(archive, terrain, out surfaces);
 
+                var deposits = TerrainOverlays.WriteDeposits(archive, m_resolver, terrain, map.Width, map.Height);
+                TerrainOverlays.WriteDesignations(archive, m_resolver, terrain, map.Width, map.Height);
+
                 var usedProtos = new Dictionary<string, EntityProto>();
                 int entityCount = WriteEntities(archive, entities, usedProtos);
                 WriteProtos(archive, usedProtos);
@@ -52,7 +55,7 @@ namespace CoiMapper.Export {
                 var counts = new Counts {
                     Entities = entityCount, Transports = 0, Edges = 0, Protos = usedProtos.Count,
                 };
-                WriteManifest(archive, map, surfaces, counts, gameName);
+                WriteManifest(archive, map, surfaces, deposits, counts, gameName);
             }
         }
 
@@ -305,7 +308,8 @@ namespace CoiMapper.Export {
 
         // ── manifest ──────────────────────────────────────────────────────────
         private void WriteManifest(
-            CoiMapArchive archive, MapInfo map, List<Surface> surfaces, Counts counts, string gameName) {
+            CoiMapArchive archive, MapInfo map, List<Surface> surfaces, List<Deposit> deposits,
+            Counts counts, string gameName) {
             // The game's version is not exposed as a service, but the assembly this mod is
             // running against carries it, which is the version that actually produced the data.
             var gameVersion = typeof(TerrainManager).Assembly.GetName().Version;
@@ -322,7 +326,7 @@ namespace CoiMapper.Export {
                 Map = map,
                 Planes = archive.WrittenPlanes.ToArray(),
                 Surfaces = surfaces.ToArray(),
-                Deposits = new Deposit[0],
+                Deposits = deposits.ToArray(),
                 Counts = counts,
             };
             archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);

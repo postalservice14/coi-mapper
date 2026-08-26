@@ -9,6 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { parseCoiMap, buildTileIndex } from '../src/coimap/parse.ts';
 import { buildTextures } from '../src/coimap/terrain.ts';
+import { readTile } from '../src/coimap/tileInfo.ts';
 
 const [input = 'schema-check.coimap'] = process.argv.slice(2);
 
@@ -66,6 +67,33 @@ check('water flag round-trips as boolean',
 check('unknown material got a fallback colour',
   /^#[0-9a-f]{6}$/i.test(doc.manifest.surfaces[3]?.color ?? ''), doc.manifest.surfaces[3]?.color);
 
+// The optional overlay planes. Both blobs sit off-centre and off-diagonal, so a
+// transposed write shows up as a miss rather than as plausible data.
+const dep = doc.planes.deposit!;
+const amt = doc.planes.depositAmount!;
+check('deposit plane decodes, 0 where there is none',
+  dep[2 * width + 3] === 1 && dep[10 * width + 13] === 2 && dep[0] === 0 && dep[47 * width + 63] === 0,
+  `(3,2)=${dep[2 * width + 3]} (13,10)=${dep[10 * width + 13]} (0,0)=${dep[0]}`);
+check('deposit amount is u16 little-endian',
+  amt[2 * width + 3] === 3 * 4096 + 2 && amt[10 * width + 13] === 65535,
+  `(3,2)=${amt[2 * width + 3]} expected ${3 * 4096 + 2}`);
+check('deposit legend present',
+  doc.manifest.deposits.length === 2 && doc.manifest.deposits[0]?.id === 1,
+  doc.manifest.deposits.map((d) => `${d.id}:${d.name}`).join(', '));
+
+// A tile can carry several designations at once, so the mask must survive as a mask
+// rather than as whichever bit was written last.
+const des = doc.planes.designation!;
+check('designation bits combine on one tile',
+  des[0 * width + 61] === 1 + 2 && des[5 * width + 5] === 8 && des[20 * width + 20] === 0,
+  `(61,0)=${des[0 * width + 61]} (5,5)=${des[5 * width + 5]}`);
+
+// The reader the status bar actually uses, not just the raw plane.
+const tile = readTile(doc, 3, 2);
+check('readTile resolves deposit and designations',
+  tile.deposit?.name === 'Crude oil' && tile.designations.includes('Mine'),
+  `${tile.deposit?.name} / ${tile.designations.join('+')} / richness ${tile.depositRichness?.toFixed(3)}`);
+
 check('transport polyline decoded',
   doc.transports.length === 1 && doc.transports[0]!.points.join(',') === '4,7,10,7,10,10',
   doc.transports[0]?.points.join(','));
@@ -78,6 +106,9 @@ check('tile index built', index[4 * width + 4] === 0 && index[0] === -1, `entity
 
 const textures = buildTextures(doc.planes, doc.manifest);
 check('textures build from C# output', textures.terrain.length === width * height * 4, `${textures.terrain.length} bytes`);
+check('overlay textures build from the new planes',
+  textures.deposits !== null && textures.designations !== null,
+  `deposits ${textures.deposits ? 'built' : 'null'}, designations ${textures.designations ? 'built' : 'null'}`);
 
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n  ${checks.length - failed.length}/${checks.length} contract checks passed\n`);

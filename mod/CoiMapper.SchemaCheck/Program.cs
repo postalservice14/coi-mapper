@@ -76,6 +76,11 @@ namespace CoiMapper.SchemaCheck {
                 new Surface { Id = 3, Name = "Unobtainium", Color = MaterialPalette.ColorFor("Unobtainium"), Water = false },
             };
 
+            var deposits = new List<Deposit> {
+                new Deposit { Id = 1, Name = "Crude oil", Color = "#2b2b33" },
+                new Deposit { Id = 2, Name = "Ground water", Color = "#4f9fd0" },
+            };
+
             var entities = new List<Entity> {
                 new Entity { Id = 1, Proto = "Furnace", X = 4, Y = 4, W = 3, H = 3, Rot = 0, State = EntityState.Operating },
                 new Entity { Id = 2, Proto = "Storage", X = 10, Y = 6, W = 4, H = 4, Rot = 1, State = EntityState.Constructing },
@@ -104,6 +109,39 @@ namespace CoiMapper.SchemaCheck {
                 archive.AddPlaneInfo("height", "u16");
                 archive.WritePlaneU8("surface", surface);
                 archive.AddPlaneInfo("surface", "u8");
+
+                // The optional overlay planes. Both are laid out asymmetrically for the same
+                // reason the height plane is: a row/column transposition on either side of
+                // the contract has to show up as wrong data rather than plausible data.
+                var deposit = new byte[Width * Height];
+                var depositAmount = new ushort[Width * Height];
+                var designation = new byte[Width * Height];
+                for (int y = 0; y < Height; y++) {
+                    for (int x = 0; x < Width; x++) {
+                        int i = y * Width + x;
+
+                        // Two blobs of different ids, leaving most of the map with none.
+                        if (x >= 2 && x < 6 && y >= 1 && y < 4) {
+                            deposit[i] = 1;
+                            depositAmount[i] = (ushort)(x * 4096 + y);
+                        } else if (x >= 12 && x < 15 && y >= 9 && y < 12) {
+                            deposit[i] = 2;
+                            depositAmount[i] = 65535;
+                        }
+
+                        // Overlapping designations, so the combined bitmask is exercised
+                        // rather than only one bit at a time.
+                        if (y < 3) designation[i] = DesignationBits.Mine;
+                        if (x > Width - 4) designation[i] |= DesignationBits.Dump;
+                        if (x == 5 && y == 5) designation[i] |= DesignationBits.Surface;
+                    }
+                }
+                archive.WritePlaneU8("deposit", deposit);
+                archive.AddPlaneInfo("deposit", "u8");
+                archive.WritePlaneU16("depositAmount", depositAmount);
+                archive.AddPlaneInfo("depositAmount", "u16");
+                archive.WritePlaneU8("designation", designation);
+                archive.AddPlaneInfo("designation", "u8");
 
                 archive.WriteJson(CoiMapSchema.Entities, w => {
                     w.BeginArray();
@@ -141,7 +179,7 @@ namespace CoiMapper.SchemaCheck {
                     Map = new MapInfo { Width = Width, Height = Height, MinHeight = -12.5f, MaxHeight = 240.25f },
                     Planes = archive.WrittenPlanes.ToArray(),
                     Surfaces = surfaces.ToArray(),
-                    Deposits = new Deposit[0],
+                    Deposits = deposits.ToArray(),
                     Counts = new Counts { Entities = entities.Count, Transports = 1, Edges = 1, Protos = entities.Count },
                 };
                 archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);
