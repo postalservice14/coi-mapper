@@ -218,3 +218,13 @@ kbd {
 /* The scene creates its own canvas inside this host, so each mount gets a fresh
    element — a canvas can only ever hold one graphics context. */
 .map-host { position: absolute; inset: 0; }
+
+/* Camera controls, floated over the map where map controls are looked for. */
+.map-controls {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  gap: 4px;
+}
+.map-controls button { background: rgba(22, 27, 34, 0.85); }

@@ -14,6 +14,17 @@ misrendering them.
 
 ### Added
 
+- **Rotate the map in 90° steps**, from a pair of buttons floated over the bottom-right of the
+  map or with the `[` and `]` keys. A base is rarely built to suit north-up, and the in-game
+  camera turns freely, so this makes the two easier to line up. Only the view turns: tile
+  coordinates stay in map space everywhere they are reported, nothing is re-parsed, and no
+  texture is re-baked, so a turn is instant on any size of map. The view turns about the
+  middle of the screen, so whatever you are looking at stays put, and fitting to the map
+  (`F`) accounts for the orientation — a tall map fits differently once it is lying on its
+  side. One known limitation: hillshading is baked into the terrain lit from the north-west,
+  so the apparent sun turns with the map, and at 180° hills can read as valleys. This is the
+  same effect as turning a printed map round.
+
 - **Tile grid overlay**, replicating the game's own terrain grid: a line per tile plus a heavy
   line every 16 tiles. It is on by default and toggles from the sidebar like any other layer.
   Per-tile lines fade out as you zoom out, and the heavy lines multiply their tile step rather

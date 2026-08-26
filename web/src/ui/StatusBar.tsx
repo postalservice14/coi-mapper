@@ -8,7 +8,7 @@ export function StatusBar({ doc, hit }: { doc: WorkerDoc; hit: TileHit | null })
   if (!hit) {
     return (
       <footer className="statusbar">
-        <span className="muted">Scroll to zoom · drag to pan · click a building · <kbd>F</kbd> to fit</span>
+        <span className="muted">Scroll to zoom · drag to pan · click a building · <kbd>F</kbd> to fit · <kbd>[</kbd> <kbd>]</kbd> to rotate</span>
         <span className="grow" />
         {doc.textureScale > 1 && (
           <span className="muted" title="The map is larger than the texture budget, so layers are drawn at reduced resolution.">

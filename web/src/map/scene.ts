@@ -119,6 +119,8 @@ export class MapScene {
   private applied = { width: 0, height: 0 };
   private fitScale = 1;
   private fitted = false;
+  /** Quarter turns clockwise applied to the view, 0-3. */
+  private quarterTurns = 0;
 
   private constructor(app: Application, doc: WorkerDoc, host: HTMLElement, canvas: HTMLCanvasElement) {
     this.app = app;
@@ -325,10 +327,7 @@ export class MapScene {
     this.applied = { width, height };
 
     const before = this.app.screen;
-    const centre = {
-      x: (before.width / 2 - this.world.x) / this.zoom,
-      y: (before.height / 2 - this.world.y) / this.zoom,
-    };
+    const centre = this.screenToWorld(before.width / 2, before.height / 2);
     // Recompute the resolution too: growing the window can otherwise push the backing
     // store past the driver's renderbuffer limit and drop the context.
     this.app.renderer.resize(width, height, safeResolution(width, height));
@@ -343,7 +342,7 @@ export class MapScene {
     // Afterwards, hold the centred world point steady so opening a panel does not
     // appear to shove the map sideways.
     this.fitScale = this.computeFitScale();
-    this.world.position.set(width / 2 - centre.x * this.zoom, height / 2 - centre.y * this.zoom);
+    this.placeWorldPointAt(centre.x, centre.y, width / 2, height / 2);
     this.cameraChanged();
   }
 
@@ -436,10 +435,41 @@ export class MapScene {
     return this.world.scale.x;
   }
 
-  private computeFitScale(): number {
+  /** True on an odd quarter turn, where the map's on-screen axes are swapped. */
+  private get quarterTurned(): boolean {
+    return this.quarterTurns % 2 === 1;
+  }
+
+  /**
+   * Screen pixels to world tiles, through the whole camera transform.
+   *
+   * Every inverse in this file goes through here rather than undoing the offset and scale
+   * by hand. A hand-rolled inverse silently stops being right the moment the camera gains
+   * a rotation, and the symptom — picking the wrong building — looks plausible.
+   */
+  private screenToWorld(sx: number, sy: number): { x: number; y: number } {
+    return this.world.toLocal({ x: sx, y: sy });
+  }
+
+  /** Moves the camera so that world point (wx, wy) sits at screen point (sx, sy). */
+  private placeWorldPointAt(wx: number, wy: number, sx: number, sy: number) {
+    // With the offset zeroed, toGlobal gives the rotate-and-scale part on its own, which
+    // is exactly the amount that has to be cancelled to land the point where we want it.
+    this.world.position.set(0, 0);
+    const p = this.world.toGlobal({ x: wx, y: wy });
+    this.world.position.set(sx - p.x, sy - p.y);
+  }
+
+  /** The map's extent in tiles as it lies on screen, so axes swap on an odd turn. */
+  private screenExtent(): { w: number; h: number } {
     const { width, height } = this.doc.manifest.map;
+    return this.quarterTurned ? { w: height, h: width } : { w: width, h: height };
+  }
+
+  private computeFitScale(): number {
+    const { w, h } = this.screenExtent();
     const { width: sw, height: sh } = this.app.screen;
-    return Math.min(sw / width, sh / height) * FIT_MARGIN;
+    return Math.min(sw / w, sh / h) * FIT_MARGIN;
   }
 
   fitToMap() {
@@ -447,7 +477,33 @@ export class MapScene {
     const { width: sw, height: sh } = this.app.screen;
     this.fitScale = this.computeFitScale();
     this.world.scale.set(this.fitScale);
-    this.world.position.set((sw - width * this.fitScale) / 2, (sh - height * this.fitScale) / 2);
+    this.placeWorldPointAt(width / 2, height / 2, sw / 2, sh / 2);
+    this.cameraChanged();
+  }
+
+  /**
+   * Turns the view a quarter turn: +1 clockwise, -1 anticlockwise.
+   *
+   * Only the container turns. Rotating the data would mean re-baking every terrain chunk
+   * and rebuilding the tile index on each press, so orientation stays a camera property
+   * and tile coordinates remain in unrotated map space everywhere else.
+   */
+  rotateBy(turns: number) {
+    const { width: sw, height: sh } = this.app.screen;
+    // Pin whatever is being looked at, so the map turns about the middle of the view
+    // rather than about tile (0,0), which is where Pixi would otherwise swing it.
+    const centre = this.screenToWorld(sw / 2, sh / 2);
+
+    this.quarterTurns = (this.quarterTurns + turns + 4) % 4;
+    this.world.rotation = (this.quarterTurns * Math.PI) / 2;
+
+    // The fit scale doubles as the zoom-out floor and depends on which way round the map
+    // lies, so on a non-square map a turn can leave the camera below the new minimum.
+    this.fitScale = this.computeFitScale();
+    const min = this.fitScale * MIN_ZOOM_FACTOR;
+    if (this.zoom < min) this.world.scale.set(min);
+
+    this.placeWorldPointAt(centre.x, centre.y, sw / 2, sh / 2);
     this.cameraChanged();
   }
 
@@ -465,8 +521,12 @@ export class MapScene {
   /** Mirrors camera state onto the canvas as data attributes, for tests and debugging. */
   private publishCamera() {
     const canvas = this.app.canvas as HTMLCanvasElement;
+    const { w, h } = this.screenExtent();
     canvas.dataset.zoom = this.zoom.toFixed(4);
-    canvas.dataset.mapSpan = `${(this.doc.manifest.map.width * this.zoom).toFixed(0)}x${(this.doc.manifest.map.height * this.zoom).toFixed(0)}`;
+    // Reported as the map lies on screen, so a fit assertion still means something once
+    // the view has been turned.
+    canvas.dataset.mapSpan = `${(w * this.zoom).toFixed(0)}x${(h * this.zoom).toFixed(0)}`;
+    canvas.dataset.rotation = String(this.quarterTurns * 90);
   }
 
   panBy(dx: number, dy: number) {
@@ -480,17 +540,16 @@ export class MapScene {
     const next = Math.min(MAX_ZOOM, Math.max(min, this.zoom * ZOOM_PER_WHEEL_LINE ** -deltaY));
     if (next === this.zoom) return;
 
-    const wx = (screenX - this.world.x) / this.zoom;
-    const wy = (screenY - this.world.y) / this.zoom;
+    const w = this.screenToWorld(screenX, screenY);
     this.world.scale.set(next);
-    this.world.position.set(screenX - wx * next, screenY - wy * next);
+    this.placeWorldPointAt(w.x, w.y, screenX, screenY);
     this.cameraChanged();
   }
 
   /** Centres the view on a tile without changing zoom. */
   centerOn(tx: number, ty: number) {
     const { width: sw, height: sh } = this.app.screen;
-    this.world.position.set(sw / 2 - (tx + 0.5) * this.zoom, sh / 2 - (ty + 0.5) * this.zoom);
+    this.placeWorldPointAt(tx + 0.5, ty + 0.5, sw / 2, sh / 2);
     this.cameraChanged();
   }
 
@@ -498,8 +557,9 @@ export class MapScene {
   /** Resolves a screen position to a tile and whatever entity occupies it. */
   hitTest(screenX: number, screenY: number): TileHit | null {
     const { width, height } = this.doc.manifest.map;
-    const tx = Math.floor((screenX - this.world.x) / this.zoom);
-    const ty = Math.floor((screenY - this.world.y) / this.zoom);
+    const p = this.screenToWorld(screenX, screenY);
+    const tx = Math.floor(p.x);
+    const ty = Math.floor(p.y);
     if (tx < 0 || ty < 0 || tx >= width || ty >= height) return null;
     return { tx, ty, entityIndex: this.doc.tileToEntity[ty * width + tx]! };
   }
@@ -527,10 +587,20 @@ export class MapScene {
 
     // The visible world rect, clamped to the map. Lines outside it cost the same to
     // draw as lines inside it and are never seen.
-    const x0 = Math.max(0, Math.floor(-this.world.x / zoom));
-    const y0 = Math.max(0, Math.floor(-this.world.y / zoom));
-    const x1 = Math.min(mapW, Math.ceil((sw - this.world.x) / zoom));
-    const y1 = Math.min(mapH, Math.ceil((sh - this.world.y) / zoom));
+    // Taking the bounding box of the viewport's corners keeps this right under rotation,
+    // and at exact quarter turns the box is tight, so nothing extra gets drawn.
+    const corners = [
+      this.screenToWorld(0, 0),
+      this.screenToWorld(sw, 0),
+      this.screenToWorld(0, sh),
+      this.screenToWorld(sw, sh),
+    ];
+    const xs = corners.map((c) => c.x);
+    const ys = corners.map((c) => c.y);
+    const x0 = Math.max(0, Math.floor(Math.min(...xs)));
+    const y0 = Math.max(0, Math.floor(Math.min(...ys)));
+    const x1 = Math.min(mapW, Math.ceil(Math.max(...xs)));
+    const y1 = Math.min(mapH, Math.ceil(Math.max(...ys)));
     if (!(x1 > x0 && y1 > y0)) {
       canvas.dataset.gridStep = 'off';
       return;

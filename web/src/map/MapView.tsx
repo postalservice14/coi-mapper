@@ -192,12 +192,14 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
     };
   }, [ready, selected, onSelect, onHover]);
 
-  // Keyboard shortcuts: F fits the map, Escape clears the selection.
+  // Keyboard shortcuts: F fits the map, [ and ] turn it, Escape clears the selection.
   useEffect(() => {
     if (!ready) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
       if (e.key === 'f' || e.key === 'F') sceneRef.current?.fitToMap();
+      if (e.key === '[') sceneRef.current?.rotateBy(-1);
+      if (e.key === ']') sceneRef.current?.rotateBy(1);
       if (e.key === 'Escape') onSelect(-1);
     };
     window.addEventListener('keydown', onKey);
@@ -221,6 +223,26 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
   return (
     <>
       <div ref={hostRef} className="map-host" />
+      {ready && !failure && (
+        <div className="map-controls">
+          <button
+            className="icon"
+            onClick={() => sceneRef.current?.rotateBy(-1)}
+            aria-label="Rotate the map anticlockwise"
+            title="Rotate anticlockwise ( [ )"
+          >
+            ↺
+          </button>
+          <button
+            className="icon"
+            onClick={() => sceneRef.current?.rotateBy(1)}
+            aria-label="Rotate the map clockwise"
+            title="Rotate clockwise ( ] )"
+          >
+            ↻
+          </button>
+        </div>
+      )}
       {failure && (
         <div className="map-failure" role="alert">
           <h2>The map could not be drawn</h2>

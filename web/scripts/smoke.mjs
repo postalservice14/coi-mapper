@@ -152,6 +152,34 @@ try {
     `on=${gridOn} off=${gridOff}`,
   );
 
+  // Like the grid, the camera's orientation only exists inside the canvas, so the scene
+  // publishes it as a data attribute too.
+  const rotation = () => page.evaluate(() => document.querySelector('canvas.map-canvas').dataset.rotation);
+  const tileAt = async (dx, dy) => {
+    await page.mouse.move(box.x + box.width / 2 + dx, box.y + box.height / 2 + dy);
+    await page.waitForTimeout(150);
+    return (await page.locator('.statusbar .mono').textContent().catch(() => null))?.trim() ?? null;
+  };
+
+  const rotBefore = await rotation();
+  const above = await tileAt(0, -120);
+  await page.locator('.map-controls button').nth(1).click();
+  await page.waitForTimeout(250);
+  const rotAfter = await rotation();
+  check('rotate right turns the view 90 degrees', rotBefore === '0' && rotAfter === '90', `${rotBefore} -> ${rotAfter}`);
+
+  // A clockwise turn about the middle of the view carries whatever sat above the centre
+  // round to its right, so the same tile has to answer from there afterwards. This is the
+  // check that catches a reflected inverse in hitTest, which otherwise looks plausible.
+  const toTheRight = await tileAt(120, 0);
+  check('picking follows the rotation', !!above && above === toTheRight, `tile ${above} moved above -> right`);
+  await page.screenshot({ path: `${outDir}/5-rotated.png` });
+
+  await page.locator('.map-controls button').nth(0).click();
+  await page.waitForTimeout(250);
+  const rotBack = await rotation();
+  check('rotate left undoes rotate right', rotBack === '0', `back to ${rotBack}`);
+
   // Search then select a building, which should open the inspector.
   await page.locator('input.search').fill('Furnace');
   await page.waitForTimeout(200);
