@@ -12,7 +12,40 @@ namespace CoiMapper.SchemaCheck {
         private const int Width = 64;
         private const int Height = 48;
 
+        /// <summary>
+        /// Real terrain material ids from Mafi.Base.Ids.TerrainMaterials, so the palette can be
+        /// checked against what the game actually has rather than invented names.
+        /// </summary>
+        private static readonly string[] RealMaterialIds = {
+            "Grass_Terrain", "GrassLush_Terrain", "GrassNoDetails_Terrain",
+            "ForestFloor_Terrain", "ForestGrass_Terrain", "ForestDirt_Terrain",
+            "Dirt_Terrain", "DirtBare_Terrain", "DirtLush_Terrain", "DirtNoDetails_Terrain",
+            "DirtFlowersPurpleLush_Terrain", "DirtFlowersRed_Terrain", "DirtFlowersWhite_Terrain",
+            "DirtFlowersYellowLush_Terrain", "Compost_Terrain",
+            "Rock_Terrain", "RockDisrupted_Terrain", "RockNoGrassCover_Terrain",
+            "HardenedRock_Terrain", "Bedrock_Terrain", "Gravel_Terrain", "Cobblestone_Terrain",
+            "Sand_Terrain", "SandDisrupted_Terrain", "ManufacturedSand_Terrain",
+            // Not natural ground: these must fall through to the game's own colour.
+            "Bauxite_Terrain", "Coal_Terrain", "CopperOre_Terrain", "IronOre_Terrain",
+            "GoldOre_Terrain", "Quartz_Terrain", "TitaniumOre_Terrain", "UraniumOre_Terrain",
+            "Limestone_Terrain", "Slag_Terrain", "RedMud_Terrain", "Sulfur_Terrain",
+        };
+
+        private static int DumpPalette() {
+            int natural = 0;
+            Console.WriteLine("  id                                natural?  colour");
+            foreach (var id in RealMaterialIds) {
+                string hex;
+                bool isNatural = MaterialPalette.TryNaturalColor(id, out hex);
+                if (isNatural) natural++;
+                Console.WriteLine($"  {id,-34}{(isNatural ? "yes" : "no "),-10}{hex ?? "(game colour)"}");
+            }
+            Console.WriteLine($"\n  {natural} curated, {RealMaterialIds.Length - natural} deferred to the game");
+            return 0;
+        }
+
         public static int Main(string[] args) {
+            if (args.Length > 0 && args[0] == "--palette") return DumpPalette();
             string path = args.Length > 0 ? args[0] : "schema-check.coimap";
 
             var surfaces = new List<Surface> {

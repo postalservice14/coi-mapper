@@ -12,6 +12,17 @@ misrendering them.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Terrain rendered saddle brown.** Colours were taken from
+  `TerrainMaterialProto.Graphics.Color`, which turns out to be a coarse particle tint rather
+  than how the ground looks: grass, lush grass, forest floor, every dirt variant and compost
+  all share one brown, and sand is pure yellow. On a real map that is nearly 30% of the
+  surface. Natural ground now uses a curated palette keyed on the prototype id, while ores
+  and everything else keep the game's colour, which is distinct and correct for them.
+- Palette matching is by id prefix rather than substring. `RockNoGrassCover` contains
+  "Grass", so rock faces were coming out lawn green.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs

@@ -2,42 +2,91 @@ using System;
 
 namespace CoiMapper.Export {
     /// <summary>
-    /// Colours for terrain materials.
+    /// Map colours for terrain materials.
     ///
-    /// Material prototypes carry no map-friendly colour, so known materials get a hand-picked
-    /// one and anything else (including modded materials) falls back to a colour derived from
-    /// its id — stable across exports, and distinct enough to tell layers apart.
+    /// The game exposes <c>TerrainMaterialProto.Graphics.Color</c>, but that is a coarse
+    /// particle/dust tint rather than how the ground renders: grass, lush grass, forest floor,
+    /// every dirt variant and compost all share one saddle brown, and sand is pure yellow. On
+    /// a real map that is nearly 30% of the surface, so the island would come out brown.
+    ///
+    /// Natural ground therefore gets a curated colour here, and everything else — ores in
+    /// particular, whose graphics colours are genuinely distinct — falls back to the game's.
+    ///
+    /// Matching is on the prototype id, never the display name: display names are localised,
+    /// so a player running the game in German would otherwise lose every colour.
     /// </summary>
     public static class MaterialPalette {
-        private static readonly string[][] Known = {
-            new[] { "dirt",      "#6b5334" },
-            new[] { "soil",      "#5f4a2e" },
-            new[] { "grass",     "#5d7a3a" },
-            new[] { "sand",      "#c9b083" },
-            new[] { "gravel",    "#8d8a80" },
-            new[] { "rock",      "#7a7469" },
-            new[] { "stone",     "#807a70" },
-            new[] { "coal",      "#2f2f33" },
-            new[] { "iron",      "#a3542f" },
-            new[] { "copper",    "#2f8f77" },
-            new[] { "gold",      "#d4af37" },
-            new[] { "limestone", "#cfc6ae" },
-            new[] { "clay",      "#9b6b4f" },
-            new[] { "snow",      "#dfe4e8" },
-            new[] { "ice",       "#cfe6f0" },
-            new[] { "ash",       "#57545" },
-            new[] { "slag",      "#4a4038" },
+        /// <summary>
+        /// Ordered id-prefix rules. Longest and most specific first, so "GrassLush" is not
+        /// swallowed by "Grass" and "RockDisrupted" is not swallowed by "Rock".
+        ///
+        /// Disrupted and crushed variants are deliberately kept slightly distinct: they mark
+        /// ground that has been mined or dumped, which is worth seeing on the map.
+        /// </summary>
+        private static readonly string[][] NaturalGround = {
+            // Vegetation
+            new[] { "GrassLush",        "#6f9440" },
+            new[] { "GrassNoDetails",   "#5f7f38" },
+            new[] { "ForestFloor",      "#4a5c30" },
+            new[] { "ForestGrass",      "#5c7a38" },
+            new[] { "ForestDirt",       "#5a4a30" },
+            new[] { "Grass",            "#5d7a3a" },
+
+            // Soils
+            new[] { "DirtFlowersPurple", "#7a6250" },
+            new[] { "DirtFlowersRed",    "#7d5c4c" },
+            new[] { "DirtFlowersWhite",  "#7e6a5c" },
+            new[] { "DirtFlowersYellow", "#7f6a48" },
+            new[] { "DirtNoDetails",     "#6b5334" },
+            new[] { "DirtLush",          "#6a5738" },
+            new[] { "DirtBare",          "#7a6242" },
+            new[] { "Dirt",              "#6b5334" },
+            new[] { "Compost",           "#4c3a24" },
+
+            // Rock and aggregate
+            new[] { "RockNoGrassCover", "#847d70" },
+            new[] { "RockDisrupted",    "#8a8276" },
+            new[] { "HardenedRock",     "#6e6a63" },
+            new[] { "Bedrock",          "#5f5c57" },
+            new[] { "Cobblestone",      "#7e7a74" },
+            new[] { "Gravel",           "#9a958b" },
+            new[] { "Rock",             "#7a7469" },
+
+            // Sand
+            new[] { "ManufacturedSand", "#cdbb93" },
+            new[] { "SandDisrupted",    "#d0bb90" },
+            new[] { "Sand",             "#c9b083" },
         };
 
+        /// <summary>
+        /// True when the id names natural ground we colour ourselves.
+        ///
+        /// Matches on a prefix, not a substring. Ids take the form "<c>Name_Terrain</c>", and a
+        /// substring match silently mis-colours anything whose name contains another material's:
+        /// "RockNoGrassCover" contains "Grass", so it came out lawn green rather than stone.
+        /// </summary>
+        public static bool TryNaturalColor(string materialId, out string hex) {
+            hex = null;
+            if (string.IsNullOrEmpty(materialId)) return false;
+
+            for (int i = 0; i < NaturalGround.Length; i++) {
+                if (materialId.StartsWith(NaturalGround[i][0], StringComparison.OrdinalIgnoreCase)) {
+                    hex = NaturalGround[i][1];
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Last-resort colour when a material has neither a curated entry nor usable graphics.
+        /// Derived from the id so it is at least stable across exports.
+        /// </summary>
         public static string ColorFor(string materialId) {
+            string natural;
+            if (TryNaturalColor(materialId, out natural)) return natural;
             if (string.IsNullOrEmpty(materialId)) return "#8a8a8a";
 
-            foreach (var entry in Known) {
-                if (materialId.IndexOf(entry[0], StringComparison.OrdinalIgnoreCase) >= 0) return entry[1];
-            }
-
-            // Deterministic fallback: hash the id to a hue, then keep saturation and
-            // lightness in an earthy band so it does not clash with the known colours.
             int hash = 0;
             foreach (char c in materialId) hash = unchecked(hash * 31 + c);
             return HslToHex(Math.Abs(hash) % 360, 0.28, 0.42);

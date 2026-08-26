@@ -144,8 +144,18 @@ namespace CoiMapper.Export {
             return list;
         }
 
-        /// <summary>Hex colour from the material's graphics, falling back to the name palette.</summary>
+        /// <summary>
+        /// Map colour for a material.
+        ///
+        /// Natural ground is coloured from our own palette, because the game's graphics colour
+        /// is a particle tint that lumps grass, forest floor, every dirt and compost into one
+        /// saddle brown. Ores and everything else keep the game's colour, which is distinct and
+        /// correct for them, and means modded materials work without changes.
+        /// </summary>
         private static string ColorOf(Mafi.Core.Products.TerrainMaterialProto proto, string id) {
+            string natural;
+            if (MaterialPalette.TryNaturalColor(id, out natural)) return natural;
+
             try {
                 var rgba = proto.Graphics.Color.Rgba;
                 return "#" + rgba.R.ToString("x2") + rgba.G.ToString("x2") + rgba.B.ToString("x2");
