@@ -139,6 +139,19 @@ try {
   await page.screenshot({ path: `${outDir}/3-all-layers.png` });
   check('optional layers toggle', true, `${toggled} toggled, ${unavailable} absent from this export`);
 
+  // The grid is drawn straight into the canvas, so there is no DOM node to assert on.
+  // The scene publishes its chosen tile step as a data attribute for exactly this.
+  const gridStep = () => page.evaluate(() => document.querySelector('canvas.map-canvas').dataset.gridStep);
+  const gridOn = await gridStep();
+  await page.locator('label.toggle').filter({ hasText: /^Grid$/ }).click();
+  await page.waitForTimeout(200);
+  const gridOff = await gridStep();
+  check(
+    'grid overlay toggles',
+    /^\d+$/.test(gridOn ?? '') && gridOff === 'off',
+    `on=${gridOn} off=${gridOff}`,
+  );
+
   // Search then select a building, which should open the inspector.
   await page.locator('input.search').fill('Furnace');
   await page.waitForTimeout(200);

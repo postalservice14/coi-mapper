@@ -12,6 +12,14 @@ misrendering them.
 
 ## [Unreleased]
 
+### Added
+
+- **Tile grid overlay**, replicating the game's own terrain grid: a line per tile plus a heavy
+  line every 16 tiles. It is on by default and toggles from the sidebar like any other layer.
+  Per-tile lines fade out as you zoom out, and the heavy lines multiply their tile step rather
+  than crowding together, so the grid stays readable at every zoom. The grid draws over
+  buildings, as it does in the game, so you can see how a machine sits within a cell.
+
 ### Fixed
 
 - **Terrain rendered saddle brown.** Colours were taken from

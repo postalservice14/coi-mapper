@@ -15,6 +15,7 @@ const DEFAULT_VISIBILITY: Record<LayerName, boolean> = {
   entities: true,
   transports: true,
   power: false,
+  grid: true,
 };
 
 export function App() {

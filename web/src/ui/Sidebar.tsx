@@ -24,6 +24,7 @@ const LAYERS: LayerRow[] = [
   { name: 'entities', label: 'Buildings', hint: 'Placed machines and structures' },
   { name: 'transports', label: 'Conveyors & pipes', hint: 'Logistics runs', needs: (d) => d.transports.length > 0 },
   { name: 'power', label: 'Power grid', hint: 'Electricity and shaft connections', needs: (d) => d.edges.length > 0 },
+  { name: 'grid', label: 'Grid', hint: 'Tile grid, heavy lines every 16 tiles' },
 ];
 
 const MAX_RESULTS = 60;

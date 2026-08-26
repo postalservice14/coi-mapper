@@ -47,6 +47,24 @@ const FIT_MARGIN = 0.96;
 /** Zoom at which individual footprints get outlines drawn over the raster layer. */
 export const OUTLINE_ZOOM = 6;
 
+/**
+ * Tile grid overlay, matched to the game's own terrain grid.
+ *
+ * The game draws a line per tile plus a heavy line every 16 tiles. As the camera pulls
+ * back it drops the per-tile lines entirely and multiplies the heavy-line step, rather
+ * than letting the heavy lines crowd into a black mass.
+ */
+const GRID_MAJOR_TILES = 16;
+/** Heavy lines double their tile step rather than sit closer together than this. */
+const GRID_MAJOR_MIN_SPACING_PX = 200;
+/** Below this zoom the per-tile lines are denser than they are legible, so they go. */
+const GRID_MINOR_MIN_ZOOM = 7;
+/** Zoom at which per-tile lines reach full strength; they fade in from the floor. */
+const GRID_MINOR_FULL_ZOOM = 12;
+const GRID_COLOR = 0x000000;
+const GRID_MINOR_ALPHA = 0.35;
+const GRID_MAJOR_ALPHA = 0.8;
+
 const TRANSPORT_STYLE: Record<string, { color: number; width: number }> = {
   Conveyor: { color: 0xf0d878, width: 0.55 },
   Pipe: { color: 0x63c8e0, width: 0.55 },
@@ -93,6 +111,7 @@ export class MapScene {
   private readonly host: HTMLElement;
   private readonly world = new Container();
   private readonly sprites = new Map<LayerName, Container>();
+  private readonly grid = new Graphics();
   private readonly highlight = new Graphics();
   private observer: ResizeObserver | null = null;
   private pendingResize = 0;
@@ -325,6 +344,7 @@ export class MapScene {
     // appear to shove the map sideways.
     this.fitScale = this.computeFitScale();
     this.world.position.set(width / 2 - centre.x * this.zoom, height / 2 - centre.y * this.zoom);
+    this.cameraChanged();
   }
 
   private build() {
@@ -371,6 +391,10 @@ export class MapScene {
       console.info('[coi-mapper] debug: vector probe added over the map bounds');
     }
 
+    // The grid sits over the data layers, as it does in the game, so you can see how a
+    // building straddles a cell. The highlight goes above it so selection stays legible.
+    this.sprites.set('grid', this.grid);
+    this.world.addChild(this.grid);
     this.world.addChild(this.highlight);
     this.app.stage.addChild(this.world);
   }
@@ -424,7 +448,18 @@ export class MapScene {
     this.fitScale = this.computeFitScale();
     this.world.scale.set(this.fitScale);
     this.world.position.set((sw - width * this.fitScale) / 2, (sh - height * this.fitScale) / 2);
+    this.cameraChanged();
+  }
+
+  /**
+   * Re-renders whatever depends on the camera rather than on the data.
+   *
+   * Every mutator below routes through here, so anything camera-derived — currently the
+   * data attributes and the grid — cannot be left stale by a new movement path.
+   */
+  private cameraChanged() {
     this.publishCamera();
+    this.drawGrid();
   }
 
   /** Mirrors camera state onto the canvas as data attributes, for tests and debugging. */
@@ -436,6 +471,7 @@ export class MapScene {
 
   panBy(dx: number, dy: number) {
     this.world.position.set(this.world.x + dx, this.world.y + dy);
+    this.cameraChanged();
   }
 
   /** Zooms about a screen point, keeping the world point under the cursor fixed. */
@@ -448,13 +484,14 @@ export class MapScene {
     const wy = (screenY - this.world.y) / this.zoom;
     this.world.scale.set(next);
     this.world.position.set(screenX - wx * next, screenY - wy * next);
-    this.publishCamera();
+    this.cameraChanged();
   }
 
   /** Centres the view on a tile without changing zoom. */
   centerOn(tx: number, ty: number) {
     const { width: sw, height: sh } = this.app.screen;
     this.world.position.set(sw / 2 - (tx + 0.5) * this.zoom, sh / 2 - (ty + 0.5) * this.zoom);
+    this.cameraChanged();
   }
 
   // ── picking ───────────────────────────────────────────────────────────────
@@ -467,10 +504,88 @@ export class MapScene {
     return { tx, ty, entityIndex: this.doc.tileToEntity[ty * width + tx]! };
   }
 
+  // ── grid ──────────────────────────────────────────────────────────────────
+  /**
+   * Redraws the tile grid for the current camera.
+   *
+   * Only the lines inside the viewport are emitted. Spanning the whole map would be
+   * thousands of segments on a large export — 7,400 on a 3584x3840 one — where culling
+   * to the viewport caps it in the low hundreds, cheap enough to redraw on every pan.
+   */
+  private drawGrid() {
+    const g = this.grid;
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    g.clear();
+    if (!g.visible) {
+      canvas.dataset.gridStep = 'off';
+      return;
+    }
+
+    const { width: mapW, height: mapH } = this.doc.manifest.map;
+    const { width: sw, height: sh } = this.app.screen;
+    const zoom = this.zoom;
+
+    // The visible world rect, clamped to the map. Lines outside it cost the same to
+    // draw as lines inside it and are never seen.
+    const x0 = Math.max(0, Math.floor(-this.world.x / zoom));
+    const y0 = Math.max(0, Math.floor(-this.world.y / zoom));
+    const x1 = Math.min(mapW, Math.ceil((sw - this.world.x) / zoom));
+    const y1 = Math.min(mapH, Math.ceil((sh - this.world.y) / zoom));
+    if (!(x1 > x0 && y1 > y0)) {
+      canvas.dataset.gridStep = 'off';
+      return;
+    }
+
+    // Heavy lines hold a roughly constant on-screen spacing by doubling their tile step
+    // as the camera pulls back, which is what the game does.
+    let step = GRID_MAJOR_TILES;
+    while (step * zoom < GRID_MAJOR_MIN_SPACING_PX) step *= 2;
+
+    // Stroke widths are world units, so divide by zoom to pin them to screen pixels.
+    const px = 1 / zoom;
+
+    // Per-tile lines, faded in over a band so they arrive gradually instead of popping.
+    if (zoom >= GRID_MINOR_MIN_ZOOM) {
+      const ramp = (zoom - GRID_MINOR_MIN_ZOOM) / (GRID_MINOR_FULL_ZOOM - GRID_MINOR_MIN_ZOOM);
+      for (let x = x0; x <= x1; x++) {
+        if (x % step === 0) continue; // the heavy pass owns this one
+        g.moveTo(x, y0);
+        g.lineTo(x, y1);
+      }
+      for (let y = y0; y <= y1; y++) {
+        if (y % step === 0) continue;
+        g.moveTo(x0, y);
+        g.lineTo(x1, y);
+      }
+      g.stroke({
+        width: px,
+        color: GRID_COLOR,
+        alpha: GRID_MINOR_ALPHA * Math.min(1, ramp),
+        alignment: 0.5,
+      });
+    }
+
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
+      g.moveTo(x, y0);
+      g.lineTo(x, y1);
+    }
+    for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
+      g.moveTo(x0, y);
+      g.lineTo(x1, y);
+    }
+    g.stroke({ width: 2 * px, color: GRID_COLOR, alpha: GRID_MAJOR_ALPHA, alignment: 0.5 });
+
+    canvas.dataset.gridStep = String(step);
+  }
+
   // ── layers & highlight ────────────────────────────────────────────────────
   setLayerVisible(name: LayerName, visible: boolean) {
     const layer = this.sprites.get(name);
-    if (layer) layer.visible = visible;
+    if (!layer) return;
+    layer.visible = visible;
+    // The grid is drawn for the camera it was last shown at, and drawGrid() skips a
+    // hidden grid entirely, so a visibility flip has to be followed by a redraw.
+    if (name === 'grid') this.drawGrid();
   }
 
   /** Draws the hover and selection outlines. Pass -1 for none. */
