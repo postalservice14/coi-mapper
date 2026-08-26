@@ -137,10 +137,14 @@ exception on failure — export errors are caught so a failure can never take th
 | `CoiMapArchive` — ZIP layout, binary plane writing | ✅ |
 | `Schema/CoiMapSchema.gen.cs` — generated data model | ✅ |
 | `WorldExporter` — terrain, buildings, prototypes | ✅ Written against decompiled APIs |
-| `WorldExporter` — networks, deposits, designations | 🚧 Next increment |
+| `TerrainOverlays` — deposits, designations | ✅ Written against decompiled APIs |
+| `WorldExporter` — networks, occupancy, thumbnail | 🚧 Next increment |
 
-Everything above **compiles** against the real game assemblies. It has **not yet been run
-inside the game** — that is the remaining unknown.
+Everything above **compiles** against the real game assemblies. Terrain, buildings and
+prototypes have been run in the game and their output renders. The deposit and designation
+walks have **not yet been run inside the game** — that is the remaining unknown, and a manager
+that fails to resolve there will log `deposit planes skipped` or `designation plane skipped`
+and omit just that layer.
 
 ### APIs it depends on
 
@@ -157,6 +161,12 @@ Read off the decompiled assemblies, not guessed:
 | Footprint | `IStaticEntity.OccupiedTiles` (already rotated) + `.CenterTile` |
 | State | `IStaticEntity.ConstructionState`, `.IsPaused`, `.IsEnabled` |
 | Display name | `EntityProto.Strings.Name.TranslatedString` |
+| Deposit bodies | `VirtualResourceManager.GetAllResourcesFor(VirtualResourceProductProto)` |
+| Deposit extent | `SimpleVirtualResource.IsAt(tile)`, bounded by `.Position.Xy` and `.MaxRadius` |
+| Deposit richness | `SimpleVirtualResource.GetApproxThicknessAt(tile).Value.ToFloat()` |
+| Mine / dump | `ITerrainDesignationsManager.Designations`, each `.Area.EnumerateTiles()` |
+| Mine vs dump | ground height against `TerrainDesignation.Data.CenterTargetHeight` — per tile |
+| Surface designations | `ISurfaceDesignationsManager.PlacingDesignations` / `.ClearingDesignations` |
 
 Note that `TileSurfaceData` covers only **player-placed** surfaces such as concrete. Natural
 terrain has none, so the surface plane records the topmost *material* layer instead — reading
@@ -175,6 +185,70 @@ ilspycmd -t Mafi.Core.Terrain.TerrainManager mod/lib/Mafi.Core.dll -r mod/lib
 Two traps worth knowing: many `Mafi.*` types (`Tile2i`, `HeightTilesF`) actually live in
 **Mafi.Core.dll**, not Mafi.dll — namespace does not imply assembly. And interface members
 decompile without access modifiers, so grepping for `public` silently hides them.
+
+### A quicker probe, with no tool install
+
+`ilspycmd` gives you whole source files, which is what you want when you need to read a method
+body. When the question is only "what is this manager called and what does it expose", a
+metadata walk answers in seconds and needs nothing beyond the SDK. It reads metadata only and
+never executes game code, so it is safe to point at the assemblies.
+
+```bash
+mkdir -p /tmp/apiprobe && cd /tmp/apiprobe
+cat > apiprobe.csproj <<'CSPROJ'
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="9.0.0" />
+  </ItemGroup>
+</Project>
+CSPROJ
+cat > Program.cs <<'PROGRAM'
+using System.Reflection;
+
+// usage: dotnet run -- types|members <needle-or-full-name> <path-to-mod/lib>
+var lib = args[2];
+var paths = Directory.GetFiles(lib, "*.dll").ToList();
+paths.AddRange(Directory.GetFiles(Path.GetDirectoryName(typeof(object).Assembly.Location)!, "*.dll"));
+var mlc = new MetadataLoadContext(new PathAssemblyResolver(paths));
+var types = new[] { "Mafi", "Mafi.Core", "Mafi.Base" }
+    .SelectMany(n => mlc.LoadFromAssemblyPath(Path.Combine(lib, n + ".dll")).GetTypes());
+
+foreach (var t in types) {
+    if (args[0] == "types") {
+        if (t.IsPublic && t.FullName!.Contains(args[1], StringComparison.OrdinalIgnoreCase))
+            Console.WriteLine(t.FullName);
+        continue;
+    }
+    if (t.FullName != args[1]) continue;
+    Console.WriteLine($"=== {t.FullName} : {t.BaseType?.Name}");
+    foreach (var i in t.GetInterfaces()) Console.WriteLine($"  impl {i.Name}");
+    foreach (var m in t.GetMembers(BindingFlags.Public | BindingFlags.Instance
+                                 | BindingFlags.Static | BindingFlags.DeclaredOnly)) {
+        if (m is MethodInfo mi && !mi.IsSpecialName)
+            Console.WriteLine($"  M {mi.ReturnType.Name} {mi.Name}({string.Join(", ",
+                mi.GetParameters().Select(p => p.ParameterType.Name + " " + p.Name))})");
+        else if (m is PropertyInfo pi) Console.WriteLine($"  P {pi.PropertyType.Name} {pi.Name}");
+        else if (m is FieldInfo fi) Console.WriteLine($"  F {fi.FieldType.Name} {fi.Name}");
+    }
+}
+PROGRAM
+
+LIB=~/Projects/personal/coi-mapper/mod/lib
+dotnet run -- types Designation $LIB
+dotnet run -- members Mafi.Core.Terrain.Designation.ITerrainDesignationsManager $LIB
+```
+
+Search by concept, not by the word you expect. The deposit planes were written against
+`VirtualResourceManager` because `types Deposit` returned one unrelated result — the game
+calls them *virtual resources*, and guessing the name would have found nothing.
+
+List fields as well as properties. `Tile2i.X` and `.Y` are public **fields**, so a listing that
+covers only properties will convince you they do not exist.
 
 ## Off-game contract test
 
