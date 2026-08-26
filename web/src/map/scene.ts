@@ -85,6 +85,9 @@ export class MapScene {
   private readonly sprites = new Map<LayerName, Container>();
   private readonly highlight = new Graphics();
   private observer: ResizeObserver | null = null;
+  private pendingResize = 0;
+  /** Size currently applied to the renderer, so repeat notifications are cheap no-ops. */
+  private applied = { width: 0, height: 0 };
   private fitScale = 1;
   private fitted = false;
 
@@ -120,11 +123,17 @@ export class MapScene {
 
     const scene = new MapScene(app, doc, host);
     scene.build();
-    console.info('[coi-mapper] scene: built, waiting for first fit');
-    // No fit here: the element may not have its final size yet. ResizeObserver fires
-    // once as soon as it starts observing, and that callback performs the initial fit
-    // against the settled layout.
+
     scene.observeHost();
+    // Fit immediately when the host is already laid out, rather than relying on the
+    // observer to deliver the first notification. Making the initial fit depend on that
+    // callback meant any hiccup in it left the world unpositioned — at scale 1 over the
+    // map's top-left corner, which on an ocean-cornered map looks like a black screen.
+    if (host.clientWidth >= 1 && host.clientHeight >= 1) {
+      scene.applySize(host.clientWidth, host.clientHeight);
+    } else {
+      console.info('[coi-mapper] scene: host has no size yet; waiting for the observer');
+    }
     return scene;
   }
 
@@ -145,27 +154,45 @@ export class MapScene {
       const rect = entries[0]?.contentRect;
       if (!rect || rect.width < 1 || rect.height < 1) return;
 
-      const before = this.app.screen;
-      const centre = {
-        x: (before.width / 2 - this.world.x) / this.zoom,
-        y: (before.height / 2 - this.world.y) / this.zoom,
-      };
-      // Recompute the resolution too: growing the window can otherwise push the backing
-      // store past the driver's renderbuffer limit and drop the context.
-      this.app.renderer.resize(rect.width, rect.height, safeResolution(rect.width, rect.height));
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      // Ignore notifications that do not actually change the size. Resizing the renderer
+      // rewrites the canvas's inline width and height, which is itself a layout change and
+      // can bring us straight back here; without this guard that is an endless cycle.
+      if (width === this.applied.width && height === this.applied.height) return;
 
-      if (!this.fitted) {
-        this.fitted = true;
-        this.fitToMap();
-        console.info(`[coi-mapper] scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
-        return;
-      }
-      // Afterwards, hold the centred world point steady so opening a panel does not
-      // appear to shove the map sideways.
-      this.fitScale = this.computeFitScale();
-      this.world.position.set(rect.width / 2 - centre.x * this.zoom, rect.height / 2 - centre.y * this.zoom);
+      // Defer the work out of the observer callback for the same reason: never mutate
+      // layout synchronously inside one.
+      cancelAnimationFrame(this.pendingResize);
+      this.pendingResize = requestAnimationFrame(() => this.applySize(width, height));
     });
     this.observer.observe(this.host);
+  }
+
+  /** Matches the renderer to a new host size, preserving the centred world point. */
+  private applySize(width: number, height: number) {
+    if (width < 1 || height < 1) return;
+    this.applied = { width, height };
+
+    const before = this.app.screen;
+    const centre = {
+      x: (before.width / 2 - this.world.x) / this.zoom,
+      y: (before.height / 2 - this.world.y) / this.zoom,
+    };
+    // Recompute the resolution too: growing the window can otherwise push the backing
+    // store past the driver's renderbuffer limit and drop the context.
+    this.app.renderer.resize(width, height, safeResolution(width, height));
+
+    if (!this.fitted) {
+      this.fitted = true;
+      this.fitToMap();
+      console.info(`[coi-mapper] scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
+      return;
+    }
+    // Afterwards, hold the centred world point steady so opening a panel does not
+    // appear to shove the map sideways.
+    this.fitScale = this.computeFitScale();
+    this.world.position.set(width / 2 - centre.x * this.zoom, height / 2 - centre.y * this.zoom);
   }
 
   private build() {
@@ -333,6 +360,7 @@ export class MapScene {
   }
 
   destroy() {
+    cancelAnimationFrame(this.pendingResize);
     this.observer?.disconnect();
     this.observer = null;
     this.app.destroy(true, { children: true, texture: true });

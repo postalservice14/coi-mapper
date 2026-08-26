@@ -66,6 +66,17 @@ misrendering them.
   ratio 1. Deliberately low quality, but it isolates whether a rendering failure is about
   scale at all.
 
+- **The initial fit depended on a `ResizeObserver` callback that could never arrive.** The
+  camera was only ever positioned from inside that callback, and the callback resized the
+  renderer synchronously — which rewrites the canvas's inline size, a layout change made
+  from inside a resize observer, and so can re-enter it. When that happened the world was
+  never positioned: left at scale 1 over the map's top-left corner, which on an
+  ocean-cornered map is a black screen, with the main thread busy in the cycle.
+
+  The scene now fits immediately on creation whenever the host is already laid out. The
+  observer only handles later changes, ignores notifications that do not change the size,
+  and defers its work to the next animation frame instead of mutating layout inline.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs
