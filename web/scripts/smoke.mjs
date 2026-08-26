@@ -16,10 +16,17 @@ const URL = `http://localhost:${PORT}/`;
 
 mkdirSync(outDir, { recursive: true });
 
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
-  stdio: 'ignore',
-  detached: false,
-});
+// DEV=1 runs against the dev server instead of the production build. That matters:
+// StrictMode double-invokes effects only in development, so bugs that appear when a scene
+// is mounted, torn down and mounted again are invisible to a production-only test.
+const useDevServer = process.env.DEV === '1';
+const server = spawn(
+  'npx',
+  useDevServer
+    ? ['vite', '--port', String(PORT), '--strictPort']
+    : ['vite', 'preview', '--port', String(PORT), '--strictPort'],
+  { stdio: 'ignore', detached: false },
+);
 
 const fail = (msg) => { console.error(`\n  FAIL  ${msg}\n`); server.kill(); process.exit(1); };
 
@@ -163,5 +170,5 @@ try {
 }
 
 const failed = checks.filter((c) => !c.ok);
-console.log(`\n  ${checks.length - failed.length}/${checks.length} checks passed · screenshots in ${outDir}\n`);
+console.log(`\n  ${checks.length - failed.length}/${checks.length} checks passed (${useDevServer ? 'dev server' : 'production build'}) · screenshots in ${outDir}\n`);
 process.exit(failed.length ? 1 : 0);

@@ -77,6 +77,16 @@ misrendering them.
   observer only handles later changes, ignores notifications that do not change the size,
   and defers its work to the next animation frame instead of mutating layout inline.
 
+- **The map was blank in development only.** React StrictMode mounts every effect, tears it
+  down and mounts it again — in development builds. The scene was built on a React-owned
+  `<canvas>`, and a canvas element holds exactly one graphics context for its entire life, so
+  the second mount inherited a dead one. Under WebGL that produced a correct frame in the
+  drawing buffer that never reached the screen; under WebGPU `getContext` simply returned
+  null. The scene now creates and owns its own canvas, so each mount starts clean.
+- The browser test can run against the dev server (`npm run smoke:dev`). Every previous run
+  used the production build, where StrictMode does not double-invoke, which is why this was
+  invisible to the whole suite.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs

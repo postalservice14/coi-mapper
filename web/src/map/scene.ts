@@ -79,6 +79,7 @@ function logCapabilities(app: Application, canvas: HTMLCanvasElement, host: HTML
 
 export class MapScene {
   readonly app: Application;
+  readonly canvas: HTMLCanvasElement;
   private readonly doc: WorkerDoc;
   private readonly host: HTMLElement;
   private readonly world = new Container();
@@ -91,15 +92,26 @@ export class MapScene {
   private fitScale = 1;
   private fitted = false;
 
-  private constructor(app: Application, doc: WorkerDoc, host: HTMLElement) {
+  private constructor(app: Application, doc: WorkerDoc, host: HTMLElement, canvas: HTMLCanvasElement) {
     this.app = app;
     this.doc = doc;
     this.host = host;
+    this.canvas = canvas;
   }
 
-  static async create(canvas: HTMLCanvasElement, doc: WorkerDoc): Promise<MapScene> {
-    const host = canvas.parentElement;
-    if (!host) throw new Error('Map canvas must be mounted before the scene is created.');
+  /**
+   * Builds a scene inside `host`, creating its own canvas.
+   *
+   * The canvas deliberately belongs to the scene rather than to React. A canvas element can
+   * hold exactly one graphics context for its whole life, so reusing a React-owned one
+   * across mounts hands the second scene a dead context — which is precisely what happens
+   * under StrictMode in development, where every effect is mounted, torn down and mounted
+   * again. Creating a fresh element per scene makes that sequence harmless.
+   */
+  static async create(host: HTMLElement, doc: WorkerDoc): Promise<MapScene> {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'map-canvas';
+    host.appendChild(canvas);
 
     const app = new Application();
     await app.init({
@@ -125,7 +137,7 @@ export class MapScene {
 
     logCapabilities(app, canvas, host);
 
-    const scene = new MapScene(app, doc, host);
+    const scene = new MapScene(app, doc, host, canvas);
     scene.build();
 
     scene.observeHost();
@@ -265,10 +277,12 @@ export class MapScene {
       const count = () => { frames++; };
       this.app.ticker.add(count);
       setTimeout(() => {
-        this.app.ticker.remove(count);
-        console.info(
-          `[coi-mapper] present: ticker started=${this.app.ticker.started}, ${frames} frames in 1s`,
-        );
+        // The scene may already have been destroyed — StrictMode tears one down within
+        // milliseconds — in which case the ticker is gone and there is nothing to report.
+        const ticker = this.app?.ticker;
+        if (!ticker) return;
+        ticker.remove(count);
+        console.info(`[coi-mapper] present: ticker started=${ticker.started}, ${frames} frames in 1s`);
       }, 1000);
     } catch (err) {
       console.warn('[coi-mapper] present: query failed', err);
@@ -482,6 +496,9 @@ export class MapScene {
     cancelAnimationFrame(this.pendingResize);
     this.observer?.disconnect();
     this.observer = null;
-    this.app.destroy(true, { children: true, texture: true });
+    this.app.destroy({ removeView: true }, { children: true, texture: true });
+    // Belt and braces: the canvas must not outlive its context, or a later scene could
+    // find it still attached and inherit a dead one.
+    this.canvas.remove();
   }
 }

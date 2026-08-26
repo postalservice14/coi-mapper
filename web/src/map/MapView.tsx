@@ -57,7 +57,7 @@ function readDiagnostics(canvas: HTMLCanvasElement, doc: WorkerDoc): string[] {
 const DRAG_THRESHOLD = 4;
 
 export function MapView({ doc, visibility, selected, onSelect, onHover, focus }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
   const [ready, setReady] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -66,8 +66,8 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
 
   // Build the scene once per document.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const host = hostRef.current;
+    if (!host) return;
 
     let disposed = false;
     let scene: MapScene | null = null;
@@ -75,19 +75,21 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
 
     // Losing the WebGL context is the usual way a very large map fails: the driver drops
     // it rather than reporting an allocation failure, and the canvas simply goes black.
-    const onContextLost = (e: Event) => {
-      e.preventDefault();
-      setFailure('The graphics context was lost.');
-      setDiagnostics(readDiagnostics(canvas, doc));
-    };
-    canvas.addEventListener('webglcontextlost', onContextLost);
+    let onContextLost: ((e: Event) => void) | null = null;
 
-    MapScene.create(canvas, doc)
+    MapScene.create(host, doc)
       .then((s) => {
         // The effect may have been torn down while Pixi was initialising.
         if (disposed) { s.destroy(); return; }
         scene = s;
         sceneRef.current = s;
+
+        onContextLost = (e: Event) => {
+          e.preventDefault();
+          setFailure('The graphics context was lost.');
+          setDiagnostics(readDiagnostics(s.canvas, doc));
+        };
+        s.canvas.addEventListener('webglcontextlost', onContextLost);
         setReady(true);
       })
       .catch((err: unknown) => {
@@ -95,24 +97,24 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
         // Without this the promise rejects unhandled and the canvas stays black with no
         // indication of why.
         setFailure(`Could not start the map renderer: ${(err as Error)?.message ?? String(err)}`);
-        setDiagnostics(readDiagnostics(canvas, doc));
+        const canvas = host.querySelector('canvas');
+        if (canvas) setDiagnostics(readDiagnostics(canvas, doc));
       });
 
     return () => {
       disposed = true;
       setReady(false);
+      if (scene && onContextLost) scene.canvas.removeEventListener('webglcontextlost', onContextLost);
       sceneRef.current = null;
-      canvas.removeEventListener('webglcontextlost', onContextLost);
       scene?.destroy();
     };
   }, [doc]);
 
   // Input: wheel to zoom, drag to pan, click to select.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !ready) return;
-
-    const scene = sceneRef.current!;
+    const scene = sceneRef.current;
+    if (!scene || !ready) return;
+    const canvas = scene.canvas;
     const local = (e: PointerEvent | WheelEvent) => {
       const r = canvas.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -218,7 +220,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
 
   return (
     <>
-      <canvas ref={canvasRef} className="map-canvas" />
+      <div ref={hostRef} className="map-host" />
       {failure && (
         <div className="map-failure" role="alert">
           <h2>The map could not be drawn</h2>

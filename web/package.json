@@ -12,7 +12,8 @@
     "smoke": "node scripts/smoke.mjs",
     "schema-check": "rolldown scripts/schema-check.ts -f esm -p node -o node_modules/.tmp/schema-check.mjs && node node_modules/.tmp/schema-check.mjs",
     "screenshots": "node scripts/screenshots.mjs",
-    "preview:big": "rolldown scripts/bigpreview.ts -f esm -p node -o node_modules/.tmp/bigpreview.mjs && node --max-old-space-size=8192 node_modules/.tmp/bigpreview.mjs"
+    "preview:big": "rolldown scripts/bigpreview.ts -f esm -p node -o node_modules/.tmp/bigpreview.mjs && node --max-old-space-size=8192 node_modules/.tmp/bigpreview.mjs",
+    "smoke:dev": "DEV=1 node scripts/smoke.mjs"
   },
   "dependencies": {
     "fflate": "^0.8.3",
