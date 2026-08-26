@@ -1,8 +1,12 @@
 {
   "id": "CoiMapper",
-  "name": "CoiMapper Exporter",
+  "displayName": "CoiMapper Exporter",
   "version": "0.1.0",
-  "author": "coi-mapper",
-  "description": "Exports the current world to a .coimap file for the CoI interactive web map.",
-  "dependencies": []
+  "description_short": "Exports the world to a .coimap file for the interactive web map.",
+  "description_long": "Walks the loaded world and writes terrain, buildings and prototypes to a .coimap archive that the coi-mapper web app renders. Read-only: it registers no prototypes and changes no gameplay, so it can be added to and removed from an existing save safely.",
+  "authors": ["postalservice14"],
+  "primary_dlls": ["CoiMapper.Exporter.dll"],
+  "non_locking_dll_load": false,
+  "can_add_to_saved_game": true,
+  "can_remove_from_saved_game": true
 }

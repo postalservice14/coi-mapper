@@ -29,19 +29,61 @@ They serve two purposes:
 
 ## Build and install
 
-```bash
-cd mod/CoiMapper.Exporter
-dotnet build -c Release
+```powershell
+dotnet build mod\CoiMapper.Exporter -c Release
 ```
 
-Copy the output plus `manifest.json` into:
+Copy **both** files from `mod\CoiMapper.Exporter\bin\Release\` into a folder whose name
+matches the `id` in `manifest.json` exactly:
 
 ```
-%APPDATA%/Captain of Industry/Mods/CoiMapper/
+%APPDATA%\Captain of Industry\Mods\CoiMapper\
+    CoiMapper.Exporter.dll
+    manifest.json
 ```
 
-The directory name must match the `id` in `manifest.json`. Launch the game, load a save,
-and the mod writes to `%APPDATA%/Captain of Industry/CoiMapper/world.coimap`.
+PowerShell one-liner:
+
+```powershell
+$dst = "$env:APPDATA\Captain of Industry\Mods\CoiMapper"
+New-Item -ItemType Directory -Force -Path $dst
+Copy-Item mod\CoiMapper.Exporter\bin\Release\CoiMapper.Exporter.dll, `
+          mod\CoiMapper.Exporter\manifest.json -Destination $dst
+```
+
+### Enabling it
+
+Captain of Industry picks mods at **world creation**, so an existing save needs the mod
+added to it. That is what `"can_add_to_saved_game": true` in the manifest allows — load the
+save, accept the prompt to add the mod, and it will run.
+
+The mod registers no prototypes and changes no gameplay, so removing it later is safe too
+(`"can_remove_from_saved_game": true`).
+
+### Manifest fields
+
+The game validates the manifest and will silently skip a mod whose manifest is malformed.
+Three fields are mandatory: `id` (must not start with `COI-`), `version`
+(`major.minor[.patch[letter]]`), and `primary_dlls` — the DLL filenames to load, in order.
+
+### Output
+
+Loading a save writes:
+
+```
+%APPDATA%\Captain of Industry\CoiMapper\world.coimap
+```
+
+### When nothing happens
+
+The game logs mod loading in detail:
+
+```
+%APPDATA%\Captain of Industry\Logs\
+```
+
+Search there for `CoiMapper`. The mod logs its output path on success and the full
+exception on failure — export errors are caught so a failure can never take the game down.
 
 ## What is implemented
 
