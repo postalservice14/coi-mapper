@@ -8,8 +8,9 @@
  *
  *   node samples/make-fixture.mjs [--out samples/fixture.coimap] [--size 512] [--seed 7]
  */
-import { writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { createZip } from './zip.mjs';
+import { encodeJpeg } from './jpeg.mjs';
 import * as S from '../schema/coimap.spec.mjs';
 
 // ── deterministic noise ──────────────────────────────────────────────────────
@@ -252,6 +253,74 @@ function placeEntities(size, terrain, seed) {
   return { entities, transports, edges, occupancy, designation };
 }
 
+// ── thumbnail ────────────────────────────────────────────────────────────────
+const hexToRgb = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+
+/**
+ * Renders a small JPEG preview of this map, standing in for the screenshot the game
+ * embeds in a real save. Framed on the built-up area so it shows something recognisable
+ * rather than empty ocean.
+ */
+function renderThumbnail({ mapSize, height, surface, elevation, entities, outW = 480, outH = 270 }) {
+  // Frame on the centroid of what has been built.
+  let cx = mapSize / 2;
+  let cy = mapSize / 2;
+  if (entities.length > 0) {
+    let sx = 0, sy = 0;
+    for (const e of entities) { sx += e.x + e.w / 2; sy += e.y + e.h / 2; }
+    cx = sx / entities.length;
+    cy = sy / entities.length;
+  }
+
+  const viewW = Math.min(mapSize, 240);
+  const viewH = Math.min(mapSize, Math.round((viewW * outH) / outW));
+  const x0 = Math.max(0, Math.min(mapSize - viewW, Math.round(cx - viewW / 2)));
+  const y0 = Math.max(0, Math.min(mapSize - viewH, Math.round(cy - viewH / 2)));
+
+  // Entity footprints, flattened to a lookup over the visible window only.
+  const entityColor = new Int32Array(viewW * viewH).fill(-1);
+  for (const e of entities) {
+    const rgb = hexToRgb(byId[e.proto]?.color ?? '#8a8a8a');
+    const packed = (rgb[0] << 16) | (rgb[1] << 8) | rgb[2];
+    for (let ty = Math.max(y0, e.y); ty < Math.min(y0 + viewH, e.y + e.h); ty++) {
+      for (let tx = Math.max(x0, e.x); tx < Math.min(x0 + viewW, e.x + e.w); tx++) {
+        entityColor[(ty - y0) * viewW + (tx - x0)] = packed;
+      }
+    }
+  }
+
+  const surfaceRgb = SURFACES.map((s) => hexToRgb(s.color));
+  const rgba = new Uint8ClampedArray(outW * outH * 4);
+
+  for (let py = 0; py < outH; py++) {
+    const ty = y0 + Math.min(viewH - 1, Math.floor((py * viewH) / outH));
+    for (let px = 0; px < outW; px++) {
+      const tx = x0 + Math.min(viewW - 1, Math.floor((px * viewW) / outW));
+      const i = ty * mapSize + tx;
+      const o = (py * outW + px) * 4;
+
+      const built = entityColor[(ty - y0) * viewW + (tx - x0)];
+      let r, g, b;
+      if (built >= 0) {
+        r = (built >> 16) & 255; g = (built >> 8) & 255; b = built & 255;
+      } else {
+        const base = surfaceRgb[surface[i]] ?? [128, 128, 128];
+        // Cheap hillshade: compare against the neighbour up-left of this tile.
+        const back = elevation[Math.max(0, i - mapSize - 1)];
+        const shade = surface[i] === SURFACE.Ocean ? 1 : 1 + (elevation[i] - back) * 6;
+        const k = Math.max(0.55, Math.min(1.35, shade));
+        r = base[0] * k; g = base[1] * k; b = base[2] * k;
+      }
+      rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
+    }
+  }
+
+  return encodeJpeg(rgba, outW, outH, 80);
+}
+
 // ── assemble ─────────────────────────────────────────────────────────────────
 function arg(flag, fallback) {
   const i = process.argv.indexOf(flag);
@@ -295,13 +364,10 @@ const members = [
   ...planes.map((p) => ({ name: p.file, data: Buffer.from(planeData[p.name].buffer) })),
 ];
 
-// Reuse the real save's thumbnail when it is available, so that code path is exercised.
-const savePath = 'samples/YT21e.save';
-if (existsSync(savePath)) {
-  const { parseSave } = await import('./inspect-save.mjs');
-  const thumb = parseSave(readFileSync(savePath)).thumbnail;
-  if (thumb) members.push({ name: S.MEMBERS.thumbnail, data: thumb });
-}
+members.push({
+  name: S.MEMBERS.thumbnail,
+  data: renderThumbnail({ mapSize: size, ...terrain, entities: world.entities }),
+});
 
 const zip = createZip(members);
 writeFileSync(out, zip);
