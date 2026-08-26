@@ -79,7 +79,27 @@ export class MapScene {
     // once as soon as it starts observing, and that callback performs the initial fit
     // against the settled layout.
     scene.observeHost();
+    scene.releaseSourceBitmaps();
     return scene;
+  }
+
+  /**
+   * Frees the ImageBitmaps once their pixels are on the GPU.
+   *
+   * Chrome backs ImageBitmap with GPU memory, so holding them alongside the textures Pixi
+   * builds from them doubles the map's footprint — 220 MB rather than 110 MB on a large
+   * base, which is enough to lose the WebGL context outright. Rendering once forces the
+   * upload, after which the source is dead weight.
+   *
+   * The trade is that a lost context cannot be repopulated from these sources, but
+   * recovering from context loss already means reloading the map.
+   */
+  private releaseSourceBitmaps() {
+    this.app.render();
+    for (const chunks of Object.values(this.doc.layers)) {
+      if (!chunks) continue;
+      for (const chunk of chunks) chunk.bitmap.close();
+    }
   }
 
   /** Keeps the renderer matched to its container, preserving the centred world point. */

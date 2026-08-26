@@ -17,19 +17,67 @@ import type { Rgba } from './terrain';
  */
 const CHUNK = 1024;
 
-/** Slices a full-map raster into chunk-sized bitmaps. */
-async function toChunks(rgba: Rgba, width: number, height: number): Promise<LayerChunk[]> {
+/**
+ * Texture budget across all layers, in bytes. Beyond this the rasters are downsampled.
+ *
+ * Every uploaded texture costs twice while it is being created: once for the ImageBitmap
+ * and once for the GPU texture Pixi builds from it. A map large enough to exceed this is
+ * better shown slightly soft than not shown at all.
+ */
+const TEXTURE_BUDGET = 96 * 1024 * 1024;
+
+/** Integer downsample factor needed to fit `layerCount` full-map layers in the budget. */
+export function downsampleFactor(width: number, height: number, layerCount: number): number {
+  let factor = 1;
+  while ((width / factor) * (height / factor) * 4 * layerCount > TEXTURE_BUDGET) factor++;
+  return factor;
+}
+
+/**
+ * Slices a raster into chunk-sized bitmaps, downsampling by `factor`.
+ *
+ * Downsampling picks the most opaque sample in each block rather than the top-left one.
+ * Conveyors are a single tile wide, so plain decimation would drop most of them; taking
+ * the strongest pixel keeps thin features visible. Chunk `w`/`h` stay in tile units so
+ * sprite placement is unaffected by the factor.
+ */
+async function toChunks(rgba: Rgba, width: number, height: number, factor: number): Promise<LayerChunk[]> {
   const chunks: LayerChunk[] = [];
-  for (let y0 = 0; y0 < height; y0 += CHUNK) {
-    for (let x0 = 0; x0 < width; x0 += CHUNK) {
-      const w = Math.min(CHUNK, width - x0);
-      const h = Math.min(CHUNK, height - y0);
-      const sub = new Uint8ClampedArray(w * h * 4);
-      for (let y = 0; y < h; y++) {
-        const from = ((y0 + y) * width + x0) * 4;
-        sub.set(rgba.subarray(from, from + w * 4), y * w * 4);
+  const tilesPerChunk = CHUNK * factor;
+
+  for (let ty0 = 0; ty0 < height; ty0 += tilesPerChunk) {
+    for (let tx0 = 0; tx0 < width; tx0 += tilesPerChunk) {
+      const tw = Math.min(tilesPerChunk, width - tx0);
+      const th = Math.min(tilesPerChunk, height - ty0);
+      const pw = Math.ceil(tw / factor);
+      const ph = Math.ceil(th / factor);
+      const sub = new Uint8ClampedArray(pw * ph * 4);
+
+      for (let py = 0; py < ph; py++) {
+        for (let px = 0; px < pw; px++) {
+          let best = -1;
+          let bestAlpha = -1;
+          for (let dy = 0; dy < factor; dy++) {
+            const sy = ty0 + py * factor + dy;
+            if (sy >= height) break;
+            for (let dx = 0; dx < factor; dx++) {
+              const sx = tx0 + px * factor + dx;
+              if (sx >= width) break;
+              const at = (sy * width + sx) * 4;
+              const alpha = rgba[at + 3]!;
+              if (alpha > bestAlpha) { bestAlpha = alpha; best = at; }
+            }
+          }
+          if (best < 0) continue;
+          const to = (py * pw + px) * 4;
+          sub[to] = rgba[best]!;
+          sub[to + 1] = rgba[best + 1]!;
+          sub[to + 2] = rgba[best + 2]!;
+          sub[to + 3] = rgba[best + 3]!;
+        }
       }
-      chunks.push({ x: x0, y: y0, w, h, bitmap: await createImageBitmap(new ImageData(sub, w, h)) });
+
+      chunks.push({ x: tx0, y: ty0, w: tw, h: th, bitmap: await createImageBitmap(new ImageData(sub, pw, ph)) });
     }
   }
   return chunks;
@@ -63,10 +111,16 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
 
     // Only upload layers that have something to draw; a null raster means the export
     // carried no plane for it.
+    const present = Object.values(rasters).filter(Boolean).length;
+    const factor = downsampleFactor(width, height, present);
+    if (factor > 1) {
+      report({ stage: 'rendering', detail: `downsampling ${factor}x to fit in GPU memory` });
+    }
+
     const layers = {} as WorkerDoc['layers'];
     for (const [name, rgba] of Object.entries(rasters)) {
       if (!rgba) continue;
-      layers[name as keyof WorkerDoc['layers']] = await toChunks(rgba, width, height);
+      layers[name as keyof WorkerDoc['layers']] = await toChunks(rgba, width, height, factor);
     }
 
     const doc: WorkerDoc = {
@@ -78,6 +132,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
       planes: parsed.planes,
       tileToEntity,
       layers,
+      textureScale: factor,
       thumbnail: parsed.thumbnail,
     };
 

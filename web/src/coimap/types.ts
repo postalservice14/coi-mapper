@@ -46,6 +46,8 @@ export interface WorkerDoc {
    */
   tileToEntity: Int32Array;
   layers: MapLayers;
+  /** 1 when rasters are full resolution; higher when downsampled to fit GPU memory. */
+  textureScale: number;
   thumbnail?: Uint8Array;
 }
 

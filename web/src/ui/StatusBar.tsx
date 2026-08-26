@@ -10,6 +10,12 @@ export function StatusBar({ doc, hit }: { doc: WorkerDoc; hit: TileHit | null })
       <footer className="statusbar">
         <span className="muted">Scroll to zoom · drag to pan · click a building · <kbd>F</kbd> to fit</span>
         <span className="grow" />
+        {doc.textureScale > 1 && (
+          <span className="muted" title="The map is larger than the texture budget, so layers are drawn at reduced resolution.">
+            {doc.textureScale}× downsampled
+            <span className="sep">·</span>
+          </span>
+        )}
         <span className="muted">{width} × {height} tiles</span>
       </footer>
     );
@@ -33,6 +39,12 @@ export function StatusBar({ doc, hit }: { doc: WorkerDoc; hit: TileHit | null })
         </>
       )}
       <span className="grow" />
+      {doc.textureScale > 1 && (
+        <span className="muted" title="The map is larger than the texture budget, so layers are drawn at reduced resolution.">
+          {doc.textureScale}× downsampled
+          <span className="sep">·</span>
+        </span>
+      )}
       <span className="muted">{width} × {height} tiles</span>
     </footer>
   );

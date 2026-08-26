@@ -37,6 +37,14 @@ misrendering them.
 - Layer toggles for data an export does not contain are shown disabled and marked "not
   exported", rather than appearing to work and doing nothing.
 
+- **ImageBitmaps were never released.** Chrome backs `ImageBitmap` with GPU memory, so
+  holding every layer's source alongside the textures Pixi builds from them doubled the
+  map's footprint — 220 MB rather than the 110 MB being reported. Sources are now closed
+  once the first render has forced the upload.
+- Layer rasters are downsampled when a map exceeds a 96 MB texture budget, rather than
+  failing to draw. Downsampling keeps the most opaque sample in each block so single-tile
+  conveyors survive, and the status bar says when it is in effect.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs
