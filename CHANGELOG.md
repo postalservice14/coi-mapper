@@ -87,6 +87,12 @@ misrendering them.
   used the production build, where StrictMode does not double-invoke, which is why this was
   invisible to the whole suite.
 
+- Diagnostic logging is silent unless `?debug=1`, and the pixel readback it performs is
+  skipped entirely otherwise.
+- The texture budget is raised to 320 MB. It was set to 96 MB while a blank map was wrongly
+  attributed to memory pressure, which downsampled maps that never needed it; the real cause
+  was a reused canvas context. The budget stays as a backstop for genuinely enormous maps.
+
 ### Planned
 
 - Conveyor and pipe polylines, and the electricity and mechanical power graphs

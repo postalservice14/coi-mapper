@@ -26,6 +26,14 @@ const MAX_BACKING_EDGE = 4096;
 /** True when the page was opened with ?safe=1. */
 const isSafeMode = () => new URLSearchParams(location.search).get('safe') === '1';
 
+/** True when the page was opened with ?debug=1. Gates all diagnostic logging. */
+const isDebug = () => new URLSearchParams(location.search).get('debug') === '1';
+
+/** Diagnostic logging, silent unless ?debug=1. */
+const debugLog = (...args: unknown[]) => {
+  if (isDebug()) console.info('[coi-mapper]', ...args);
+};
+
 /** Device pixel ratio that keeps the backing store inside {@link MAX_BACKING_EDGE}. */
 function safeResolution(width: number, height: number): number {
   if (isSafeMode()) return 1;
@@ -60,6 +68,7 @@ export interface TileHit {
  * never paints it.
  */
 function logCapabilities(app: Application, canvas: HTMLCanvasElement, host: HTMLElement) {
+  if (!isDebug()) return;
   try {
     const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
     const info = gl?.getExtension('WEBGL_debug_renderer_info');
@@ -133,7 +142,7 @@ export class MapScene {
       // that points at the platform's WebGL compositing path rather than at our scene.
       preference: new URLSearchParams(location.search).get('renderer') === 'webgpu' ? 'webgpu' : 'webgl',
     });
-    console.info(`[coi-mapper] scene: renderer backend = ${app.renderer.type === 1 ? 'webgl' : 'webgpu'}`);
+    debugLog(`scene: renderer backend = ${app.renderer.type === 1 ? 'webgl' : 'webgpu'}`);
 
     logCapabilities(app, canvas, host);
 
@@ -194,6 +203,7 @@ export class MapScene {
    * before the drawing buffer is swapped.
    */
   private logRenderState() {
+    if (!isDebug()) return;
     try {
       const layers: Record<string, unknown> = {};
       for (const [name, container] of this.sprites) {
@@ -238,7 +248,7 @@ export class MapScene {
       for (const [name, info] of Object.entries(layers)) {
         lines.push(`layer ${name}: ${JSON.stringify(info)}`);
       }
-      for (const line of lines) console.info(`[coi-mapper] draw: ${line}`);
+      for (const line of lines) debugLog(`draw: ${line}`);
       this.logPresentation();
     } catch (err) {
       console.warn('[coi-mapper] draw: state query failed', err);
@@ -253,6 +263,7 @@ export class MapScene {
    * running. Those are invisible to any check that only inspects the renderer.
    */
   private logPresentation() {
+    if (!isDebug()) return;
     try {
       const canvas = this.app.canvas as HTMLCanvasElement;
       const rect = canvas.getBoundingClientRect();
@@ -270,7 +281,7 @@ export class MapScene {
       const topmost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
       const describe = (el: Element | null) =>
         el ? `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ').join('.') : ''}` : 'nothing';
-      console.info(`[coi-mapper] present: topmost element at canvas centre is ${describe(topmost)}`);
+      debugLog(`present: topmost element at canvas centre is ${describe(topmost)}`);
 
       // Is the render loop actually producing frames, or did only the manual render run?
       let frames = 0;
@@ -282,7 +293,7 @@ export class MapScene {
         const ticker = this.app?.ticker;
         if (!ticker) return;
         ticker.remove(count);
-        console.info(`[coi-mapper] present: ticker started=${ticker.started}, ${frames} frames in 1s`);
+        debugLog(`present: ticker started=${ticker.started}, ${frames} frames in 1s`);
       }, 1000);
     } catch (err) {
       console.warn('[coi-mapper] present: query failed', err);
@@ -306,7 +317,7 @@ export class MapScene {
     if (!this.fitted) {
       this.fitted = true;
       this.fitToMap();
-      console.info(`[coi-mapper] scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
+      debugLog(`scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
       this.logRenderState();
       return;
     }
@@ -343,7 +354,7 @@ export class MapScene {
         }
         this.sprites.set(name, container);
         this.world.addChild(container);
-        console.info(`[coi-mapper] scene: uploaded layer "${name}" (${chunks.length} chunks)`);
+        debugLog(`scene: uploaded layer "${name}" (${chunks.length} chunks)`);
       }
       if (name === 'entities') this.world.addChild(this.buildTransports(), this.buildPower());
     }

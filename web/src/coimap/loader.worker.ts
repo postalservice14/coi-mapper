@@ -21,10 +21,13 @@ const CHUNK = 1024;
  * Texture budget across all layers, in bytes. Beyond this the rasters are downsampled.
  *
  * Every uploaded texture costs twice while it is being created: once for the ImageBitmap
- * and once for the GPU texture Pixi builds from it. A map large enough to exceed this is
- * better shown slightly soft than not shown at all.
+ * and once for the GPU texture Pixi builds from it, so the real ceiling is twice this.
+ *
+ * Set generously: this exists as a backstop for genuinely enormous maps, not as a routine
+ * quality trade. It was briefly much lower while a blank map was wrongly attributed to
+ * memory pressure, which cost sharpness on maps that never needed it.
  */
-const TEXTURE_BUDGET = 96 * 1024 * 1024;
+const TEXTURE_BUDGET = 320 * 1024 * 1024;
 
 /** Longest edge a single layer may have in safe mode, so each fits one chunk. */
 const SAFE_MODE_EDGE = 1024;
@@ -102,6 +105,8 @@ export interface LoaderRequest {
    * texture per layer. Slow to look at, but it isolates whether a failure is about scale.
    */
   safeMode?: boolean;
+  /** Emit per-stage progress to the console. Set by ?debug=1 on the page. */
+  debug?: boolean;
 }
 
 export type LoaderResponse =
@@ -118,10 +123,14 @@ const report = (progress: LoadProgress) => self.postMessage({ progress } satisfi
  * output written before the hang still does — so the last line logged pinpoints where it
  * stopped.
  */
-const stage = (message: string) => console.info(`[coi-mapper] worker: ${message}`);
+let debugEnabled = false;
+const stage = (message: string) => {
+  if (debugEnabled) console.info(`[coi-mapper] worker: ${message}`);
+};
 
 self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
   try {
+    debugEnabled = event.data.debug === true;
     stage(`opening archive (${(event.data.archive.byteLength / 1e6).toFixed(1)} MB)`);
     report({ stage: 'unzipping' });
     const parsed = parseCoiMap(new Uint8Array(event.data.archive));

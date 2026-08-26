@@ -151,6 +151,21 @@ straight to the real TypeScript parser. Fifteen assertions cover JSON escaping, 
 formatting, enum encoding and plane byte order — a disagreement between the two languages
 fails there, rather than after a round trip through Windows and the game.
 
+## Troubleshooting
+
+If a map does not render, these URL flags help narrow it down:
+
+| Flag | Effect |
+| --- | --- |
+| `?debug=1` | Logs each load stage, the renderer's name and limits, what was drawn, and whether the canvas is actually on screen |
+| `?safe=1` | Renders the whole map as one small texture per layer at device pixel ratio 1 — poor quality, but isolates whether a failure is about scale |
+| `?renderer=webgpu` | Switches Pixi from WebGL to WebGPU |
+
+Note that the browser test can run against either build: `npm run smoke` uses the production
+build, `npm run smoke:dev` uses the dev server. They are not interchangeable — React
+StrictMode double-invokes effects in development only, so a scene that cannot survive being
+mounted twice fails in one and passes in the other.
+
 ## Design notes
 
 A few decisions that shaped the result:
@@ -170,6 +185,10 @@ are rasterised the same way — entity count doesn't affect frame rate.
 
 **Hit-testing is an array index.** Because the world is a grid, picking a building is a lookup
 in a flat `tile → entity` array. No quadtree, no spatial hashing.
+
+**The renderer owns its canvas.** A canvas element holds exactly one graphics context for
+its entire life, so a React-owned canvas reused across mounts hands the second scene a dead
+one — which StrictMode guarantees in development. The scene creates and removes its own.
 
 **Hillshade relief is derived per map.** Exaggeration is scaled so the *median* land gradient
 hits a target slope. A fixed constant produced a 9% shade range — technically working, visually
