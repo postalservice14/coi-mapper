@@ -37,13 +37,23 @@ misrendering them.
   so the apparent sun turns with the map, and at 180° hills can read as valleys. This is the
   same effect as turning a printed map round.
 
-- **Tile grid overlay**, replicating the game's own terrain grid: a line per tile plus a heavy
-  line every 16 tiles. It is on by default and toggles from the sidebar like any other layer.
-  Per-tile lines fade out as you zoom out, and the heavy lines multiply their tile step rather
-  than crowding together, so the grid stays readable at every zoom. The grid draws over
-  buildings, as it does in the game, so you can see how a machine sits within a cell.
+- **Tile grid overlay**, replicating the game's own terrain grid: a line per tile, a stronger
+  one every 16 tiles, and a heavy one every 128. It is on by default and toggles from the
+  sidebar like any other layer. Each level fades out as you zoom away from it, so the grid
+  stays readable at every zoom. The grid draws over buildings, as it does in the game, so you
+  can see how a machine sits within a cell.
 
 ### Fixed
+
+- **The grid used the wrong steps.** The heavy step was picked per frame by doubling until the
+  lines were far enough apart, so it landed on 256 or 1024 as readily as on anything meaningful
+  — the grid changed shape as you zoomed instead of describing the map. It is now three fixed,
+  nested levels matching the game: a line per tile, a stronger one every 16, and the heavy dark
+  one every 128 — eight 16-cells — so zooming into one 16-cell shows the 16x16 tiles inside it,
+  and the heavy lines meet the edges of a map whose size is a whole multiple of 128. Each level
+  fades on its own on-screen spacing rather than on zoom, and the heavy lines thin as they
+  crowd instead of changing step, which keeps a whole-map view of a large export from turning
+  into a black mesh.
 
 - **The map was drawn upside down.** Tile rows count northward in the game, while an image's
   rows count downward, so drawing row 0 at the top laid every map out mirrored top to bottom

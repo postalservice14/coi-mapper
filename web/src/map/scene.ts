@@ -50,26 +50,56 @@ export const OUTLINE_ZOOM = 6;
 /**
  * Tile grid overlay, matched to the game's own terrain grid.
  *
- * The game draws a line per tile plus a heavy line every 16 tiles. As the camera pulls
- * back it drops the per-tile lines entirely and multiplies the heavy-line step, rather
- * than letting the heavy lines crowd into a black mass.
+ * Three nested levels: a line per tile, a stronger one every 16 tiles, and the heavy dark one
+ * every 128 — eight 16-cells — so zooming into one 16-cell shows the 16x16 tiles inside it.
+ *
+ * The steps are fixed. Nothing scales them with the camera; instead each level fades on its
+ * own on-screen spacing, dropping the tile lines first, then the 16s, leaving the 128s.
  */
-const GRID_MAJOR_TILES = 16;
-/** Heavy lines double their tile step rather than sit closer together than this. */
-const GRID_MAJOR_MIN_SPACING_PX = 200;
-/** Below this zoom the per-tile lines are denser than they are legible, so they go. */
-const GRID_MINOR_MIN_ZOOM = 7;
-/** Zoom at which per-tile lines reach full strength; they fade in from the floor. */
-const GRID_MINOR_FULL_ZOOM = 12;
+const GRID_TILE_TILES = 1;
+const GRID_MINOR_TILES = 16;
+const GRID_MAJOR_TILES = 128;
+/**
+ * Where the heavy grid starts, in tiles, relative to tile (0,0).
+ *
+ * Zero: the grid is aligned to the map origin. Map sizes are whole multiples of 128 — 3584 is
+ * 28 and 3840 is 30 — so the heavy lines meet the map edges exactly. An earlier build drew
+ * this level every 96 tiles, which does not divide 3584, and the resulting drift looked like a
+ * misplaced grid rather than a wrong step; the knob is kept so that is cheap to test again.
+ *
+ * If it ever is non-zero, note that a negative Y moves lines *down* the screen: the map is
+ * drawn mirrored (see setZoom).
+ */
+const GRID_MAJOR_OFFSET_TILES = 0;
+/** Each level fades in across this band of on-screen spacing, in pixels. */
+const GRID_TILE_FADE_PX = { from: 6, to: 14 };
+const GRID_MINOR_FADE_PX = { from: 9, to: 26 };
 const GRID_COLOR = 0x000000;
-const GRID_MINOR_ALPHA = 0.35;
+const GRID_TILE_ALPHA = 0.16;
+const GRID_MINOR_ALPHA = 0.4;
 const GRID_MAJOR_ALPHA = 0.8;
+/**
+ * Heavy lines thin out as they crowd, rather than changing step or disappearing.
+ *
+ * On a 3584x3840 export the 128-tile lines land about 26px apart when the whole map is on
+ * screen, and at full strength that is a black mesh over the entire base. Fading them keeps
+ * the steps the game's while leaving the map readable at any zoom.
+ */
+const GRID_MAJOR_TIGHT_SPACING_PX = 20;
+const GRID_MAJOR_CLEAR_SPACING_PX = 60;
+const GRID_MAJOR_FAINT_ALPHA = 0.18;
 
 const TRANSPORT_STYLE: Record<string, { color: number; width: number }> = {
   Conveyor: { color: 0xf0d878, width: 0.55 },
   Pipe: { color: 0x63c8e0, width: 0.55 },
   Unknown: { color: 0xcccccc, width: 0.45 },
 };
+
+/** One level of the grid: how often its lines fall, and where they start. */
+interface GridLevel {
+  step: number;
+  offset: number;
+}
 
 export interface TileHit {
   tx: number;
@@ -619,46 +649,70 @@ export class MapScene {
       return;
     }
 
-    // Heavy lines hold a roughly constant on-screen spacing by doubling their tile step
-    // as the camera pulls back, which is what the game does.
-    let step = GRID_MAJOR_TILES;
-    while (step * zoom < GRID_MAJOR_MIN_SPACING_PX) step *= 2;
-
     // Stroke widths are world units, so divide by zoom to pin them to screen pixels.
     const px = 1 / zoom;
 
-    // Per-tile lines, faded in over a band so they arrive gradually instead of popping.
-    if (zoom >= GRID_MINOR_MIN_ZOOM) {
-      const ramp = (zoom - GRID_MINOR_MIN_ZOOM) / (GRID_MINOR_FULL_ZOOM - GRID_MINOR_MIN_ZOOM);
-      for (let x = x0; x <= x1; x++) {
-        if (x % step === 0) continue; // the heavy pass owns this one
-        g.moveTo(x, y0);
-        g.lineTo(x, y1);
-      }
-      for (let y = y0; y <= y1; y++) {
-        if (y % step === 0) continue;
-        g.moveTo(x0, y);
-        g.lineTo(x1, y);
-      }
-      g.stroke({
-        width: px,
-        color: GRID_COLOR,
-        alpha: GRID_MINOR_ALPHA * Math.min(1, ramp),
-        alignment: 0.5,
-      });
-    }
+    // Each level fades on its own on-screen spacing rather than on zoom: spacing is what
+    // decides whether lines read as a grid or as a grey wash, and the same zoom means very
+    // different spacing at each step.
+    const fade = (spacing: number, band: { from: number; to: number }) =>
+      Math.max(0, Math.min(1, (spacing - band.from) / (band.to - band.from)));
 
-    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) {
+    const tileAlpha = GRID_TILE_ALPHA * fade(zoom, GRID_TILE_FADE_PX);
+    const minorAlpha = GRID_MINOR_ALPHA * fade(GRID_MINOR_TILES * zoom, GRID_MINOR_FADE_PX);
+
+    const tiles = { step: GRID_TILE_TILES, offset: 0 };
+    const minor = { step: GRID_MINOR_TILES, offset: 0 };
+    const major = { step: GRID_MAJOR_TILES, offset: GRID_MAJOR_OFFSET_TILES };
+
+    // Every level skips the lines the level above already owns, so a shared line is drawn
+    // once at its strongest weight instead of being painted over.
+    if (tileAlpha > 0.01) this.strokeGridLines(tiles, minor, x0, y0, x1, y1, px, tileAlpha);
+    if (minorAlpha > 0.01) this.strokeGridLines(minor, major, x0, y0, x1, y1, px, minorAlpha);
+
+    const majorRamp = Math.max(0, Math.min(1,
+      (GRID_MAJOR_TILES * zoom - GRID_MAJOR_TIGHT_SPACING_PX)
+      / (GRID_MAJOR_CLEAR_SPACING_PX - GRID_MAJOR_TIGHT_SPACING_PX)));
+    this.strokeGridLines(major, null, x0, y0, x1, y1, 2 * px,
+      GRID_MAJOR_FAINT_ALPHA + (GRID_MAJOR_ALPHA - GRID_MAJOR_FAINT_ALPHA) * majorRamp);
+
+    // The finest level actually on screen, so a test can tell the states apart.
+    const finest = tileAlpha > 0.01 ? GRID_TILE_TILES
+      : minorAlpha > 0.01 ? GRID_MINOR_TILES : GRID_MAJOR_TILES;
+    canvas.dataset.gridStep = String(finest);
+  }
+
+  /**
+   * Strokes one level of the grid across the visible rect.
+   *
+   * `owner` is the level above, whose lines this one leaves alone: a line belonging to the
+   * heavy pass drawn twice would darken unevenly rather than cleanly. Both levels carry an
+   * offset so the grid can be shifted off the map origin without the ownership test drifting
+   * out of step with what is actually drawn.
+   */
+  private strokeGridLines(
+    level: GridLevel, owner: GridLevel | null,
+    x0: number, y0: number, x1: number, y1: number,
+    width: number, alpha: number,
+  ) {
+    const g = this.grid;
+    // First line of `level` at or after `v0`, and whether `v` is one of `owner`'s.
+    const start = (v0: number) =>
+      Math.ceil((v0 - level.offset) / level.step) * level.step + level.offset;
+    const ownedBy = (v: number) =>
+      owner !== null && (((v - owner.offset) % owner.step) + owner.step) % owner.step === 0;
+
+    for (let x = start(x0); x <= x1; x += level.step) {
+      if (ownedBy(x)) continue;
       g.moveTo(x, y0);
       g.lineTo(x, y1);
     }
-    for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
+    for (let y = start(y0); y <= y1; y += level.step) {
+      if (ownedBy(y)) continue;
       g.moveTo(x0, y);
       g.lineTo(x1, y);
     }
-    g.stroke({ width: 2 * px, color: GRID_COLOR, alpha: GRID_MAJOR_ALPHA, alignment: 0.5 });
-
-    canvas.dataset.gridStep = String(step);
+    g.stroke({ width, color: GRID_COLOR, alpha, alignment: 0.5 });
   }
 
   // ── layers & highlight ────────────────────────────────────────────────────
