@@ -29,6 +29,7 @@ export function StatusBar({ doc, hit }: { doc: WorkerDoc; hit: TileHit | null })
       <span className="mono">{hit.tx}, {hit.ty}</span>
       <span className="sep">·</span>
       <span>{tile.surface?.name ?? 'Unknown'}</span>
+      {tile.tileSurface && <><span className="sep">·</span><span>{tile.tileSurface.name}</span></>}
       {tile.height !== null && <><span className="sep">·</span><span>{tile.height.toFixed(1)} m</span></>}
       {tile.deposit && <><span className="sep">·</span><span style={{ color: tile.deposit.color }}>{tile.deposit.name}</span></>}
       {tile.designations.length > 0 && <><span className="sep">·</span><span className="muted">{tile.designations.join('+')}</span></>}

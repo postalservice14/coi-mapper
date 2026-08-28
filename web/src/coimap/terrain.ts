@@ -1,11 +1,12 @@
 /**
  * Turns raster planes into RGBA textures. Pure and DOM-free so it runs in a worker.
  *
- * Three separate textures rather than one composite: the overlays can then be toggled
- * and re-tinted without recomputing the (expensive) terrain hillshade.
+ * Separate textures rather than one composite: the overlays can then be toggled and
+ * re-tinted without recomputing the (expensive) terrain hillshade — which is itself baked
+ * once into a shared buffer, since paving is lit by the same light as the ground it covers.
  */
 import { DESIGNATION_BITS } from './schema.gen';
-import type { Manifest } from './schema.gen';
+import type { Manifest, TileSurface } from './schema.gen';
 import type { Planes } from './types';
 
 /**
@@ -23,6 +24,16 @@ const LIGHT = (() => {
 
 /** Fraction of a surface's colour that shows regardless of slope. */
 const AMBIENT = 0.55;
+
+/** Undoes the 0-255 quantisation of the shared shade buffer. */
+const SHADE_SCALE = 1 / 255;
+
+/**
+ * Opacity of player-placed paving. Just short of opaque: concrete genuinely replaces the
+ * ground in game rather than tinting it, but leaving a trace of the terrain through keeps
+ * the map's relief readable across a large paved base.
+ */
+const PAVING_ALPHA = 245;
 
 /**
  * Target gradient magnitude for a *typical* land tile after scaling. Relief is then
@@ -60,6 +71,7 @@ export type Rgba = Uint8ClampedArray<ArrayBuffer>;
  */
 export interface TerrainTextures {
   terrain: Rgba;
+  surfaces: Rgba | null;
   deposits: Rgba | null;
   designations: Rgba | null;
 }
@@ -87,6 +99,7 @@ export function buildTextures(planes: Planes, manifest: Manifest): TerrainTextur
   }
 
   const relief = computeRelief(heights, surface, isWater, width, height);
+  const shading = computeShade(heights, width, height, relief);
   const terrain = new Uint8ClampedArray(tiles * 4);
 
   // Water depth is shaded against the shallowest water on the map, not absolute zero,
@@ -96,28 +109,61 @@ export function buildTextures(planes: Planes, manifest: Manifest): TerrainTextur
     if (isWater[surface[i]!]) maxWaterHeight = Math.max(maxWaterHeight, heights[i]!);
   }
 
+  for (let i = 0; i < tiles; i++) {
+    const s = surface[i]!;
+    const o = i * 4;
+
+    if (isWater[s]) {
+      // Deeper water is darker and slightly bluer.
+      const depth = maxWaterHeight > 0 ? 1 - heights[i]! / maxWaterHeight : 0;
+      const k = 1 - Math.min(0.6, depth * 1.4);
+      terrain[o] = surfR[s]! * k;
+      terrain[o + 1] = surfG[s]! * k;
+      terrain[o + 2] = surfB[s]! * (k * 0.85 + 0.15);
+      terrain[o + 3] = 255;
+      continue;
+    }
+
+    const shade = shading[i]! * SHADE_SCALE;
+    terrain[o] = surfR[s]! * shade;
+    terrain[o + 1] = surfG[s]! * shade;
+    terrain[o + 2] = surfB[s]! * shade;
+    terrain[o + 3] = 255;
+  }
+
+  return {
+    terrain,
+    surfaces: buildTileSurfaceOverlay(manifest, tiles, shading, planes.tileSurface),
+    deposits: buildDepositOverlay(manifest, tiles, deposit, depositAmount),
+    designations: buildDesignationOverlay(tiles, designation),
+  };
+}
+
+/**
+ * Per-tile hillshade, quantised to 0-255.
+ *
+ * Baked once and shared by every layer that sits on the ground, so terrain and paving are
+ * lit identically and the gradient maths lives in one place. 256 levels is plenty: the
+ * textures it feeds are 8-bit anyway.
+ */
+function computeShade(
+  heights: Uint8Array | Uint16Array,
+  width: number,
+  height: number,
+  relief: number,
+): Uint8ClampedArray {
+  // Clamped rather than plain Uint8: it rounds on assignment where Uint8Array truncates,
+  // which would darken every tile by up to a level for nothing.
+  const shade = new Uint8ClampedArray(width * height);
+
   for (let y = 0; y < height; y++) {
     const row = y * width;
     // Clamp gradient sampling at the borders rather than wrapping to the far edge.
-    const up = (y > 0 ? -width : 0);
-    const down = (y < height - 1 ? width : 0);
+    const up = y > 0 ? -width : 0;
+    const down = y < height - 1 ? width : 0;
 
     for (let x = 0; x < width; x++) {
       const i = row + x;
-      const s = surface[i]!;
-      const o = i * 4;
-
-      if (isWater[s]) {
-        // Deeper water is darker and slightly bluer.
-        const depth = maxWaterHeight > 0 ? 1 - heights[i]! / maxWaterHeight : 0;
-        const k = 1 - Math.min(0.6, depth * 1.4);
-        terrain[o] = surfR[s]! * k;
-        terrain[o + 1] = surfG[s]! * k;
-        terrain[o + 2] = surfB[s]! * (k * 0.85 + 0.15);
-        terrain[o + 3] = 255;
-        continue;
-      }
-
       const left = x > 0 ? -1 : 0;
       const right = x < width - 1 ? 1 : 0;
       const dzdx = (heights[i + right]! - heights[i + left]!) * relief;
@@ -126,20 +172,10 @@ export function buildTextures(planes: Planes, manifest: Manifest): TerrainTextur
       // Surface normal is (-dz/dx, -dz/dy, 1); shade by its dot with the light.
       const nlen = Math.hypot(dzdx, dzdy, 1);
       const dot = (-dzdx * LIGHT.x - dzdy * LIGHT.y + LIGHT.z) / nlen;
-      const shade = AMBIENT + (1 - AMBIENT) * Math.max(0, dot);
-
-      terrain[o] = surfR[s]! * shade;
-      terrain[o + 1] = surfG[s]! * shade;
-      terrain[o + 2] = surfB[s]! * shade;
-      terrain[o + 3] = 255;
+      shade[i] = (AMBIENT + (1 - AMBIENT) * Math.max(0, dot)) * 255;
     }
   }
-
-  return {
-    terrain,
-    deposits: buildDepositOverlay(manifest, tiles, deposit, depositAmount),
-    designations: buildDesignationOverlay(tiles, designation),
-  };
+  return shade;
 }
 
 /**
@@ -171,6 +207,49 @@ function computeRelief(
   const median = samples[samples.length >> 1]!;
   // A perfectly flat map has no slope to normalise against; any value renders the same.
   return median > 0 ? TARGET_SLOPE / median : 1 / 4096;
+}
+
+/**
+ * Player-placed paving — concrete, brick, metal flooring.
+ *
+ * Unlike the deposit and designation overlays this is not a tint: it is drawn near-opaque
+ * and shaded with the same hillshade as the terrain underneath, because paving replaces
+ * the ground rather than marking it. Without the shading a large paved base reads as a
+ * flat grey hole punched through the relief.
+ */
+function buildTileSurfaceOverlay(
+  manifest: Manifest,
+  tiles: number,
+  shading: Uint8ClampedArray,
+  tileSurface?: Uint8Array | Uint16Array,
+): Rgba | null {
+  if (!tileSurface) return null;
+
+  const legend: TileSurface[] = manifest.tileSurfaces ?? [];
+  const maxId = legend.reduce((m, t) => Math.max(m, t.id), 0);
+  if (maxId === 0) return null;
+
+  const [r, g, b] = [new Uint8Array(maxId + 1), new Uint8Array(maxId + 1), new Uint8Array(maxId + 1)];
+  for (const t of legend) {
+    const [tr, tg, tb] = parseHex(t.color);
+    r[t.id] = tr; g[t.id] = tg; b[t.id] = tb;
+  }
+
+  const rgba = new Uint8ClampedArray(tiles * 4);
+  for (let i = 0; i < tiles; i++) {
+    const id = tileSurface[i]!;
+    // 0 is the game's phantom surface id and already means "unpaved"; no shift is applied
+    // to these ids, unlike the natural-ground `surface` plane.
+    if (id === 0 || id > maxId) continue;
+
+    const shade = shading[i]! * SHADE_SCALE;
+    const o = i * 4;
+    rgba[o] = r[id]! * shade;
+    rgba[o + 1] = g[id]! * shade;
+    rgba[o + 2] = b[id]! * shade;
+    rgba[o + 3] = PAVING_ALPHA;
+  }
+  return rgba;
 }
 
 function buildDepositOverlay(

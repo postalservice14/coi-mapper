@@ -38,6 +38,7 @@ namespace CoiMapper.Schema {
             new Def("height", "u16", false),
             new Def("surface", "u8", false),
             new Def("material", "u8", true),
+            new Def("tileSurface", "u8", true),
             new Def("deposit", "u8", true),
             new Def("depositAmount", "u16", true),
             new Def("designation", "u8", true),
@@ -76,6 +77,8 @@ namespace CoiMapper.Schema {
         public PlaneInfo[] Planes;
         /// <summary>Legend for the surface plane.</summary>
         public Surface[] Surfaces;
+        /// <summary>Legend for the tileSurface plane. Absent in files written before that plane existed.</summary>
+        public TileSurface[] TileSurfaces;
         /// <summary>Legend for the deposit plane.</summary>
         public Deposit[] Deposits;
         public Counts Counts;
@@ -89,6 +92,7 @@ namespace CoiMapper.Schema {
             w.Name("map"); Map.WriteTo(w);
             w.Name("planes").BeginArray(); foreach (var v in Planes ?? new PlaneInfo[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("surfaces").BeginArray(); foreach (var v in Surfaces ?? new Surface[0]) { v.WriteTo(w); } w.EndArray();
+            w.Name("tileSurfaces").BeginArray(); foreach (var v in TileSurfaces ?? new TileSurface[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("deposits").BeginArray(); foreach (var v in Deposits ?? new Deposit[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("counts"); Counts.WriteTo(w);
             w.EndObject();
@@ -178,6 +182,23 @@ namespace CoiMapper.Schema {
             w.Name("name").Value(Name);
             w.Name("color").Value(Color);
             w.Name("water").Value(Water);
+            w.EndObject();
+        }
+    }
+
+    public sealed class TileSurface {
+        /// <summary>Value stored in the tileSurface plane; 0 means unpaved.</summary>
+        public int Id;
+        /// <summary>Display name, e.g. "Concrete".</summary>
+        public string Name;
+        /// <summary>Fill as "#rrggbb"; hillshading is applied on top.</summary>
+        public string Color;
+
+        public void WriteTo(JsonWriter w) {
+            w.BeginObject();
+            w.Name("id").Value(Id);
+            w.Name("name").Value(Name);
+            w.Name("color").Value(Color);
             w.EndObject();
         }
     }

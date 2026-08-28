@@ -38,8 +38,9 @@ export const ENUMS = {
  */
 export const PLANES = {
   height:        { dtype: 'u16', optional: false, doc: 'Terrain height, game units, per tile.' },
-  surface:       { dtype: 'u8',  optional: false, doc: 'Surface type slim id; index into protos.surfaces.' },
+  surface:       { dtype: 'u8',  optional: false, doc: 'Natural ground: topmost material slim id + 1, 0 = ocean. Index into manifest.surfaces. Despite the name this is NOT player-placed paving — see tileSurface.' },
   material:      { dtype: 'u8',  optional: true,  doc: 'Topmost terrain material slim id.' },
+  tileSurface:   { dtype: 'u8',  optional: true,  doc: 'Player-placed surface slim id; 0 = unpaved. Index into manifest.tileSurfaces.' },
   deposit:       { dtype: 'u8',  optional: true,  doc: 'Virtual resource id present under this tile; 0 = none.' },
   depositAmount: { dtype: 'u16', optional: true,  doc: 'Relative quantity of the deposit, 0-65535.' },
   designation:   { dtype: 'u8',  optional: true,  doc: 'Bitmask: 1=mine 2=dump 4=forestry 8=surface 16=unreachable.' },
@@ -59,6 +60,7 @@ export const STRUCTS = {
     { name: 'map',           type: 'MapInfo' },
     { name: 'planes',        type: 'PlaneInfo[]', doc: 'Which raster planes this file actually contains.' },
     { name: 'surfaces',      type: 'Surface[]',   doc: 'Legend for the surface plane.' },
+    { name: 'tileSurfaces',  type: 'TileSurface[]', doc: 'Legend for the tileSurface plane. Absent in files written before that plane existed.' },
     { name: 'deposits',      type: 'Deposit[]',   doc: 'Legend for the deposit plane.' },
     { name: 'counts',        type: 'Counts' },
   ],
@@ -90,6 +92,15 @@ export const STRUCTS = {
     { name: 'name',  type: 'string', doc: 'Display name, e.g. "Grass".' },
     { name: 'color', type: 'string', doc: 'Base fill as "#rrggbb"; hillshading is applied on top.' },
     { name: 'water', type: 'bool',   doc: 'True for ocean and water surfaces.' },
+  ],
+  /**
+   * A player-placed surface — concrete, brick, metal flooring: what the `tileSurface`
+   * plane's ids mean. Distinct from `Surface`, which is natural ground.
+   */
+  TileSurface: [
+    { name: 'id',    type: 'int',    doc: 'Value stored in the tileSurface plane; 0 means unpaved.' },
+    { name: 'name',  type: 'string', doc: 'Display name, e.g. "Concrete".' },
+    { name: 'color', type: 'string', doc: 'Fill as "#rrggbb"; hillshading is applied on top.' },
   ],
   /** A virtual resource deposit type: what the `deposit` plane's ids mean. */
   Deposit: [

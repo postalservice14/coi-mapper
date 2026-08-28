@@ -167,10 +167,21 @@ Read off the decompiled assemblies, not guessed:
 | Mine / dump | `ITerrainDesignationsManager.Designations`, each `.Area.EnumerateTiles()` |
 | Mine vs dump | ground height against `TerrainDesignation.Data.CenterTargetHeight` — per tile |
 | Surface designations | `ISurfaceDesignationsManager.PlacingDesignations` / `.ClearingDesignations` |
+| Player-placed surfaces | `TerrainManager.TileSurfacesData[index].SurfaceSlimId.Value` |
+| Surface legend | `TerrainManager.TerrainSurfaces` (`ImmutableArray<TerrainTileSurfaceProto>`) |
 
-Note that `TileSurfaceData` covers only **player-placed** surfaces such as concrete. Natural
-terrain has none, so the surface plane records the topmost *material* layer instead — reading
-`TryGetTileSurface` alone would render blank ground everywhere the player had not paved.
+`TileSurfaceData` covers only **player-placed** surfaces such as concrete, and natural terrain
+has none — reading it alone would render blank ground everywhere the player had not paved. So
+the two are separate planes: `surface` records the topmost *material* layer and is what colours
+the ground, while `tileSurface` records the paving on top of it.
+
+Their id conventions differ, which is the easiest thing to get wrong. `surface` shifts material
+slim ids by one so 0 can mean ocean; `tileSurface` writes slim ids **unshifted**, because slim
+id 0 is already `TileSurfaceSlimId.PhantomId` and means unpaved.
+
+A surface prototype also has no map colour. Unlike `TerrainMaterialProto`, its `Gfx` carries
+only a texture spec, an edge spec, a dust tint and an icon path — so every colour in
+`SurfacePalette` is chosen rather than read from the game.
 
 ## Decompiling
 

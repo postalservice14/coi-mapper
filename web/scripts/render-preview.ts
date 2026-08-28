@@ -50,9 +50,11 @@ for (const [name, rgba] of Object.entries(textures)) {
   console.log(`  wrote ${path}`);
 }
 
-// Composite view: terrain with both overlays alpha-blended over it, as the app shows it.
+// Composite view: terrain with the overlays alpha-blended over it, as the app shows it.
+// Order must match the scene's draw order, so paving sits under the deposit and
+// designation tints rather than painting over them.
 const composite = new Uint8ClampedArray(textures.terrain);
-for (const overlay of [textures.deposits, textures.designations]) {
+for (const overlay of [textures.surfaces, textures.deposits, textures.designations]) {
   for (let i = 0; i < composite.length; i += 4) {
     const a = overlay[i + 3]! / 255;
     if (a === 0) continue;

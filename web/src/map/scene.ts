@@ -385,7 +385,7 @@ export class MapScene {
     // A layer is skipped entirely when the export carried no plane for it. Each one is
     // width*height*4 bytes of texture — 55 MB on a 13.8M-tile map — so uploading empty
     // overlays can exhaust GPU memory and leave nothing on screen at all.
-    for (const name of ['terrain', 'deposits', 'designations', 'entities'] as const) {
+    for (const name of ['terrain', 'surfaces', 'deposits', 'designations', 'entities'] as const) {
       const chunks = layers[name];
       if (chunks && chunks.length > 0) {
         // One container per layer holding a sprite per chunk, so toggling still works on

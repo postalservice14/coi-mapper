@@ -10,6 +10,7 @@ import { StatusBar } from './StatusBar';
 
 const DEFAULT_VISIBILITY: Record<LayerName, boolean> = {
   terrain: true,
+  surfaces: true,
   deposits: false,
   designations: false,
   entities: true,

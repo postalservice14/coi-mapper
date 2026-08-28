@@ -25,6 +25,8 @@ export interface LayerChunk {
 export interface MapLayers {
   terrain: LayerChunk[];
   entities: LayerChunk[];
+  /** Player-placed paving. Distinct from `terrain`, which is natural ground. */
+  surfaces?: LayerChunk[];
   deposits?: LayerChunk[];
   designations?: LayerChunk[];
 }

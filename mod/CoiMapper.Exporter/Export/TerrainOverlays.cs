@@ -11,8 +11,8 @@ using CoiMapper.Schema;
 
 namespace CoiMapper.Export {
     /// <summary>
-    /// Writes the optional overlay planes: virtual resource deposits, and the terrain
-    /// designations the player has drawn.
+    /// Writes the optional overlay planes: virtual resource deposits, the surfaces the player
+    /// has paved, and the terrain designations they have drawn.
     ///
     /// Every API used here was read off the decompiled game assemblies rather than guessed;
     /// see mod/README.md for the decompilation workflow.
@@ -234,6 +234,91 @@ namespace CoiMapper.Export {
                 }
             }
             return any;
+        }
+
+        // ── player-placed surfaces ────────────────────────────────────────────
+        /// <summary>
+        /// Writes the tileSurface plane and returns the legend for it.
+        ///
+        /// This is the paving the player has laid — concrete, brick, metal flooring — and is
+        /// a different thing from the `surface` plane, which despite its name carries the
+        /// natural ground material. Untouched terrain has no tile surface at all, so most of
+        /// this plane is zero on most maps.
+        ///
+        /// Slim id 0 is the phantom entry, which already means "nothing here", so ids go into
+        /// the plane unshifted. The `surface` plane's +1 shift does NOT apply here.
+        /// </summary>
+        public static List<TileSurface> WriteTileSurfaces(
+            CoiMapArchive archive, TerrainManager terrain, int width, int height) {
+            var legend = new List<TileSurface>();
+            try {
+                var data = terrain.TileSurfacesData;
+                var plane = new byte[width * height];
+                bool any = false;
+
+                for (int y = 0; y < height; y++) {
+                    for (int x = 0; x < width; x++) {
+                        int index = terrain.GetTileIndex(new Tile2i(x, y)).Value;
+                        if (index < 0 || index >= data.Length) continue;
+
+                        byte slim = data[index].SurfaceSlimId.Value;
+                        if (slim == 0) continue;
+                        plane[y * width + x] = slim;
+                        any = true;
+                    }
+                }
+
+                // A map with nothing paved would otherwise ship megabytes of zeroes for a
+                // layer the app would draw as blank anyway.
+                if (!any) return legend;
+
+                archive.WritePlaneU8("tileSurface", plane);
+                archive.AddPlaneInfo("tileSurface", "u8");
+                legend = BuildLegend(terrain);
+            } catch (Exception e) {
+                Log.Error("CoiMapper: tileSurface plane skipped — " + e);
+                legend.Clear();
+            }
+            return legend;
+        }
+
+        /// <summary>
+        /// One entry per surface prototype the game knows about, keyed by its slim id.
+        ///
+        /// Colours are ours: unlike a terrain material, a surface prototype's graphics carry
+        /// only a texture and an icon, with no map colour to read. See SurfacePalette.
+        /// </summary>
+        private static List<TileSurface> BuildLegend(TerrainManager terrain) {
+            var list = new List<TileSurface>();
+            var protos = terrain.TerrainSurfaces;
+
+            for (int i = 0; i < protos.Length; i++) {
+                var proto = protos[i];
+                string id = proto.Id.Value;
+                // The slim-id manager keeps a phantom entry as its "nothing here" value; it is
+                // not a real surface and would show up in the legend as noise.
+                if (id.IndexOf("PHANTOM", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+
+                list.Add(new TileSurface {
+                    Id = proto.SlimId.Value,
+                    Name = SurfaceName(proto, id),
+                    Color = SurfacePalette.ColorFor(id),
+                });
+            }
+            return list;
+        }
+
+        /// <summary>
+        /// Localised name where there is one, else the id with its camel case split. Surface
+        /// ids carry no suffix, unlike terrain materials' "_Terrain".
+        /// </summary>
+        private static string SurfaceName(TerrainTileSurfaceProto proto, string id) {
+            try {
+                string localised = proto.Strings.Name.TranslatedString;
+                if (!string.IsNullOrEmpty(localised)) return localised;
+            } catch { }
+
+            return DisplayNames.FromId(id);
         }
     }
 }

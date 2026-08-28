@@ -27,10 +27,12 @@ export const NetworkKindValues = ['Electricity', 'MechanicalShaft', 'Rail'] as c
 export const PLANES = {
   /** Terrain height, game units, per tile. */
   height: { dtype: 'u16', optional: false },
-  /** Surface type slim id; index into protos.surfaces. */
+  /** Natural ground: topmost material slim id + 1, 0 = ocean. Index into manifest.surfaces. Despite the name this is NOT player-placed paving — see tileSurface. */
   surface: { dtype: 'u8', optional: false },
   /** Topmost terrain material slim id. */
   material: { dtype: 'u8', optional: true },
+  /** Player-placed surface slim id; 0 = unpaved. Index into manifest.tileSurfaces. */
+  tileSurface: { dtype: 'u8', optional: true },
   /** Virtual resource id present under this tile; 0 = none. */
   deposit: { dtype: 'u8', optional: true },
   /** Relative quantity of the deposit, 0-65535. */
@@ -82,6 +84,8 @@ export interface Manifest {
   planes: PlaneInfo[];
   /** Legend for the surface plane. */
   surfaces: Surface[];
+  /** Legend for the tileSurface plane. Absent in files written before that plane existed. */
+  tileSurfaces: TileSurface[];
   /** Legend for the deposit plane. */
   deposits: Deposit[];
   counts: Counts;
@@ -129,6 +133,15 @@ export interface Surface {
   color: string;
   /** True for ocean and water surfaces. */
   water: boolean;
+}
+
+export interface TileSurface {
+  /** Value stored in the tileSurface plane; 0 means unpaved. */
+  id: number;
+  /** Display name, e.g. "Concrete". */
+  name: string;
+  /** Fill as "#rrggbb"; hillshading is applied on top. */
+  color: string;
 }
 
 export interface Deposit {

@@ -66,6 +66,10 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
     );
   }
 
+  // The tileSurface plane was added after v2 shipped, so an export written before it has
+  // no legend field at all. Absorb that here rather than guarding every reader.
+  if (!manifest.tileSurfaces) manifest.tileSurfaces = [];
+
   const { width, height } = manifest.map;
   if (!(width > 0 && height > 0)) throw new CoiMapError(`Invalid map size ${width}×${height}.`);
   const tiles = width * height;

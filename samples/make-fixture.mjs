@@ -62,6 +62,20 @@ const SURFACES = [
   { id: 4, name: 'Snow',  color: '#dfe4e8', water: false },
 ];
 
+/**
+ * Legend for the tileSurface plane; id 0 means unpaved.
+ *
+ * These are player-placed surfaces, not natural ground — the game keeps the two in
+ * separate planes and so do we. Ids and colours mirror the exporter's own palette.
+ */
+const TILE_SURFACE = { Concrete: 1, Reinforced: 2, Bricks: 3, Metal: 4 };
+const TILE_SURFACES = [
+  { id: 1, name: 'Concrete',              color: '#9a9a95' },
+  { id: 2, name: 'Concrete (reinforced)', color: '#7f8288' },
+  { id: 3, name: 'Bricks',                color: '#a3583f' },
+  { id: 4, name: 'Metal Floor',           color: '#8e959c' },
+];
+
 /** Legend for the deposit plane; id 0 means no deposit. */
 const DEPOSITS = [
   { id: 1, name: 'Coal',        color: '#2f2f33' },
@@ -354,6 +368,48 @@ function placeEntities(size, terrain, seed) {
   return { entities, transports, edges, occupancy, designation };
 }
 
+// ── paving ───────────────────────────────────────────────────────────────────
+/**
+ * Player-placed surfaces, derived from what got built.
+ *
+ * Real players pave what they use, so the fixture does too: reinforced concrete under the
+ * machines, a plain concrete apron spilling a couple of tiles around each, and brick paths
+ * along the conveyor runs. One cluster gets a metal floor instead, so the layer exercises
+ * more than a single legend entry.
+ *
+ * Never paves water — the game cannot, and a paved ocean would hide a real bug in the
+ * renderer behind plausible-looking output.
+ */
+function buildPaving(size, terrain, world) {
+  const { elevation } = terrain;
+  const plane = new Uint8Array(size * size);
+
+  const pave = (x, y, id) => {
+    if (x < 0 || y < 0 || x >= size || y >= size) return;
+    const i = y * size + x;
+    if (elevation[i] < SEA_LEVEL) return;
+    plane[i] = id;
+  };
+
+  const APRON = 2;
+  world.entities.forEach((entity, n) => {
+    // Every fourth building stands on metal instead, for legend variety.
+    const floor = n % 4 === 3 ? TILE_SURFACE.Metal : TILE_SURFACE.Reinforced;
+    for (let dy = -APRON; dy < entity.h + APRON; dy++) {
+      for (let dx = -APRON; dx < entity.w + APRON; dx++) {
+        const inside = dx >= 0 && dy >= 0 && dx < entity.w && dy < entity.h;
+        pave(entity.x + dx, entity.y + dy, inside ? floor : TILE_SURFACE.Concrete);
+      }
+    }
+  });
+
+  for (const transport of world.transports) {
+    for (const [x, y] of tracePolyline(transport.points)) pave(x, y, TILE_SURFACE.Bricks);
+  }
+
+  return plane;
+}
+
 // ── thumbnail ────────────────────────────────────────────────────────────────
 const hexToRgb = (hex) => {
   const n = parseInt(hex.slice(1), 16);
@@ -435,7 +491,9 @@ const out = arg('--out', 'samples/fixture.coimap');
 const terrain = buildTerrain(size, seed);
 const world = placeEntities(size, terrain, seed);
 
-const planeData = { ...terrain, ...world };
+const tileSurface = buildPaving(size, terrain, world);
+
+const planeData = { ...terrain, ...world, tileSurface };
 const planes = Object.entries(S.PLANES)
   .filter(([name]) => planeData[name])
   .map(([name, def]) => ({ name, dtype: def.dtype, file: `${S.MEMBERS.planeDir}${name}.${def.dtype}` }));
@@ -448,6 +506,7 @@ const manifest = {
   map: { width: size, height: size, minHeight: 0, maxHeight: 200 },
   planes,
   surfaces: SURFACES,
+  tileSurfaces: TILE_SURFACES,
   deposits: DEPOSITS,
   counts: {
     entities: world.entities.length,

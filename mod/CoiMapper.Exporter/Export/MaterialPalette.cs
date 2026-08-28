@@ -89,15 +89,25 @@ namespace CoiMapper.Export {
 
         /// <summary>
         /// Last-resort colour when a material has neither a curated entry nor usable graphics.
-        /// Derived from the id so it is at least stable across exports.
         /// </summary>
         public static string ColorFor(string materialId) {
             string natural;
             if (TryNaturalColor(materialId, out natural)) return natural;
-            if (string.IsNullOrEmpty(materialId)) return "#8a8a8a";
+            return HashColor(materialId);
+        }
+
+        /// <summary>
+        /// A muted colour derived from the id alone, for anything with no curated entry.
+        ///
+        /// Shared with <see cref="SurfacePalette"/>: modded content should still be
+        /// distinguishable on the map, and deriving from the id keeps a given mod the same
+        /// colour across exports rather than shifting with enumeration order.
+        /// </summary>
+        public static string HashColor(string id) {
+            if (string.IsNullOrEmpty(id)) return "#8a8a8a";
 
             int hash = 0;
-            foreach (char c in materialId) hash = unchecked(hash * 31 + c);
+            foreach (char c in id) hash = unchecked(hash * 31 + c);
             return HslToHex(Math.Abs(hash) % 360, 0.28, 0.42);
         }
 

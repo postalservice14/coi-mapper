@@ -14,6 +14,23 @@ misrendering them.
 
 ### Added
 
+- **A "Surfaces" layer for player-placed paving** — concrete, brick, metal flooring — in a new
+  optional `tileSurface` plane with its own legend. This is a genuinely new read: the existing
+  `surface` plane is a misnomer that carries the *natural ground material*, so nothing on the
+  map previously showed what had been paved. Paving is drawn near-opaque and hillshaded with
+  the same relief as the terrain under it, so turning the layer on makes the base read as
+  actually paved rather than tinted, and the status bar and inspector now report ground and
+  surface as separate values.
+
+  The schema version is deliberately **not** bumped. The plane is optional and a missing
+  legend defaults to empty, so exports written before this change still load and simply show
+  "Surfaces — not exported", the same as any other absent overlay.
+
+  A surface prototype carries no map colour — unlike a terrain material, its graphics hold only
+  a texture and an icon — so the colours come from a new curated `SurfacePalette`, kept separate
+  from `MaterialPalette` because ids like `Cobblestone` and `Sand` exist in both and mean
+  different things.
+
 - **The exporter now writes deposits and designations.** Deposits are the game's *virtual*
   resources — the oil and water bodies a pump draws from, not ores, which are ordinary terrain
   materials the surface plane already carries — and come with a legend and a per-tile richness

@@ -37,6 +37,7 @@ namespace CoiMapper.Export {
                 List<Surface> surfaces;
                 var map = WriteTerrain(archive, terrain, out surfaces);
 
+                var tileSurfaces = TerrainOverlays.WriteTileSurfaces(archive, terrain, map.Width, map.Height);
                 var deposits = TerrainOverlays.WriteDeposits(archive, m_resolver, terrain, map.Width, map.Height);
                 TerrainOverlays.WriteDesignations(archive, m_resolver, terrain, map.Width, map.Height);
 
@@ -55,7 +56,7 @@ namespace CoiMapper.Export {
                 var counts = new Counts {
                     Entities = entityCount, Transports = 0, Edges = 0, Protos = usedProtos.Count,
                 };
-                WriteManifest(archive, map, surfaces, deposits, counts, gameName);
+                WriteManifest(archive, map, surfaces, tileSurfaces, deposits, counts, gameName);
             }
         }
 
@@ -177,15 +178,7 @@ namespace CoiMapper.Export {
                 if (!string.IsNullOrEmpty(localised)) return localised;
             } catch { }
 
-            string name = id.EndsWith(Mafi.Core.Products.TerrainMaterialProto.SUFFIX, StringComparison.Ordinal)
-                ? id.Substring(0, id.Length - Mafi.Core.Products.TerrainMaterialProto.SUFFIX.Length)
-                : id;
-            var sb = new System.Text.StringBuilder(name.Length + 4);
-            for (int i = 0; i < name.Length; i++) {
-                if (i > 0 && char.IsUpper(name[i]) && !char.IsUpper(name[i - 1])) sb.Append(' ');
-                sb.Append(name[i]);
-            }
-            return sb.ToString();
+            return DisplayNames.FromId(id, Mafi.Core.Products.TerrainMaterialProto.SUFFIX);
         }
 
         // ── entities ──────────────────────────────────────────────────────────
@@ -308,7 +301,8 @@ namespace CoiMapper.Export {
 
         // ── manifest ──────────────────────────────────────────────────────────
         private void WriteManifest(
-            CoiMapArchive archive, MapInfo map, List<Surface> surfaces, List<Deposit> deposits,
+            CoiMapArchive archive, MapInfo map, List<Surface> surfaces, List<TileSurface> tileSurfaces,
+            List<Deposit> deposits,
             Counts counts, string gameName) {
             // The game's version is not exposed as a service, but the assembly this mod is
             // running against carries it, which is the version that actually produced the data.
@@ -326,6 +320,7 @@ namespace CoiMapper.Export {
                 Map = map,
                 Planes = archive.WrittenPlanes.ToArray(),
                 Surfaces = surfaces.ToArray(),
+                TileSurfaces = tileSurfaces.ToArray(),
                 Deposits = deposits.ToArray(),
                 Counts = counts,
             };

@@ -81,6 +81,21 @@ check('deposit legend present',
   doc.manifest.deposits.length === 2 && doc.manifest.deposits[0]?.id === 1,
   doc.manifest.deposits.map((d) => `${d.id}:${d.name}`).join(', '));
 
+// Player-placed paving. The slab is wide and short and its ids are nested, so a
+// transposed write misses it and an id collapsed to a boolean fails the middle probe.
+const paved = doc.planes.tileSurface!;
+check('tileSurface plane decodes, 0 where unpaved',
+  paved[7 * width + 21] === 1 && paved[7 * width + 24] === 2 && paved[7 * width + 25] === 3
+    && paved[0] === 0 && paved[21 * width + 7] === 0,
+  `(21,7)=${paved[7 * width + 21]} (24,7)=${paved[7 * width + 24]} (25,7)=${paved[7 * width + 25]} (7,21)=${paved[21 * width + 7]}`);
+check('tileSurface legend present and unshifted',
+  doc.manifest.tileSurfaces.length === 3 && doc.manifest.tileSurfaces[0]?.id === 1,
+  doc.manifest.tileSurfaces.map((t) => `${t.id}:${t.name}`).join(', '));
+check('unknown surface got a fallback colour',
+  /^#[0-9a-f]{6}$/i.test(doc.manifest.tileSurfaces[2]?.color ?? ''), doc.manifest.tileSurfaces[2]?.color);
+check('surface id splits camel case when unlocalised',
+  doc.manifest.tileSurfaces[2]?.name === 'Modded Glass Floor', doc.manifest.tileSurfaces[2]?.name);
+
 // A tile can carry several designations at once, so the mask must survive as a mask
 // rather than as whichever bit was written last.
 const des = doc.planes.designation!;
@@ -93,6 +108,12 @@ const tile = readTile(doc, 3, 2);
 check('readTile resolves deposit and designations',
   tile.deposit?.name === 'Crude oil' && tile.designations.includes('Mine'),
   `${tile.deposit?.name} / ${tile.designations.join('+')} / richness ${tile.depositRichness?.toFixed(3)}`);
+
+const pavedTile = readTile(doc, 25, 7);
+check('readTile resolves paving separately from ground',
+  pavedTile.tileSurface?.name === 'Modded Glass Floor' && pavedTile.surface !== null
+    && readTile(doc, 0, 0).tileSurface === null,
+  `${pavedTile.surface?.name} + ${pavedTile.tileSurface?.name}`);
 
 check('transport polyline decoded',
   doc.transports.length === 1 && doc.transports[0]!.points.join(',') === '4,7,10,7,10,10',
@@ -107,8 +128,14 @@ check('tile index built', index[4 * width + 4] === 0 && index[0] === -1, `entity
 const textures = buildTextures(doc.planes, doc.manifest);
 check('textures build from C# output', textures.terrain.length === width * height * 4, `${textures.terrain.length} bytes`);
 check('overlay textures build from the new planes',
-  textures.deposits !== null && textures.designations !== null,
-  `deposits ${textures.deposits ? 'built' : 'null'}, designations ${textures.designations ? 'built' : 'null'}`);
+  textures.deposits !== null && textures.designations !== null && textures.surfaces !== null,
+  `deposits ${textures.deposits ? 'built' : 'null'}, designations ${textures.designations ? 'built' : 'null'}, ` +
+    `surfaces ${textures.surfaces ? 'built' : 'null'}`);
+// Paving is drawn near-opaque and hillshaded; unpaved tiles must stay fully transparent so
+// the terrain shows through rather than being covered by a black layer.
+check('paving texture is opaque where paved and clear where not',
+  textures.surfaces![(7 * width + 25) * 4 + 3] > 200 && textures.surfaces![3] === 0,
+  `alpha paved ${textures.surfaces![(7 * width + 25) * 4 + 3]}, unpaved ${textures.surfaces![3]}`);
 
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n  ${checks.length - failed.length}/${checks.length} contract checks passed\n`);

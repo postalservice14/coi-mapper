@@ -76,6 +76,15 @@ namespace CoiMapper.SchemaCheck {
                 new Surface { Id = 3, Name = "Unobtainium", Color = MaterialPalette.ColorFor("Unobtainium"), Water = false },
             };
 
+            // Ids are unshifted here, matching the exporter: slim id 0 is the game's phantom
+            // surface and already means "unpaved".
+            var tileSurfaces = new List<TileSurface> {
+                new TileSurface { Id = 1, Name = "Concrete", Color = SurfacePalette.ColorFor("DefaultConcrete") },
+                new TileSurface { Id = 2, Name = "Bricks", Color = SurfacePalette.ColorFor("Bricks") },
+                // No curated entry: must fall through to the shared id-derived colour.
+                new TileSurface { Id = 3, Name = DisplayNames.FromId("ModdedGlassFloor"), Color = SurfacePalette.ColorFor("ModdedGlassFloor") },
+            };
+
             var deposits = new List<Deposit> {
                 new Deposit { Id = 1, Name = "Crude oil", Color = "#2b2b33" },
                 new Deposit { Id = 2, Name = "Ground water", Color = "#4f9fd0" },
@@ -116,9 +125,17 @@ namespace CoiMapper.SchemaCheck {
                 var deposit = new byte[Width * Height];
                 var depositAmount = new ushort[Width * Height];
                 var designation = new byte[Width * Height];
+                var tileSurface = new byte[Width * Height];
                 for (int y = 0; y < Height; y++) {
                     for (int x = 0; x < Width; x++) {
                         int i = y * Width + x;
+
+                        // Paving: a wide-but-short slab, so a transposed write lands outside
+                        // it rather than producing a plausible square. One tile of a third id
+                        // sits inside it to prove ids are not collapsed to "paved / not".
+                        if (x >= 20 && x < 30 && y >= 6 && y < 9) tileSurface[i] = 1;
+                        if (x >= 24 && x < 27 && y == 7) tileSurface[i] = 2;
+                        if (x == 25 && y == 7) tileSurface[i] = 3;
 
                         // Two blobs of different ids, leaving most of the map with none.
                         if (x >= 2 && x < 6 && y >= 1 && y < 4) {
@@ -142,6 +159,8 @@ namespace CoiMapper.SchemaCheck {
                 archive.AddPlaneInfo("depositAmount", "u16");
                 archive.WritePlaneU8("designation", designation);
                 archive.AddPlaneInfo("designation", "u8");
+                archive.WritePlaneU8("tileSurface", tileSurface);
+                archive.AddPlaneInfo("tileSurface", "u8");
 
                 archive.WriteJson(CoiMapSchema.Entities, w => {
                     w.BeginArray();
@@ -179,6 +198,7 @@ namespace CoiMapper.SchemaCheck {
                     Map = new MapInfo { Width = Width, Height = Height, MinHeight = -12.5f, MaxHeight = 240.25f },
                     Planes = archive.WrittenPlanes.ToArray(),
                     Surfaces = surfaces.ToArray(),
+                    TileSurfaces = tileSurfaces.ToArray(),
                     Deposits = deposits.ToArray(),
                     Counts = new Counts { Entities = entities.Count, Transports = 1, Edges = 1, Protos = entities.Count },
                 };

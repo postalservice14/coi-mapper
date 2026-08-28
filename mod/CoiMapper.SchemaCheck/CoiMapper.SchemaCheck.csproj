@@ -22,6 +22,8 @@
     <Compile Include="../CoiMapper.Exporter/Schema/JsonWriter.cs" Link="Schema/JsonWriter.cs" />
     <Compile Include="../CoiMapper.Exporter/Export/CoiMapArchive.cs" Link="Export/CoiMapArchive.cs" />
     <Compile Include="../CoiMapper.Exporter/Export/MaterialPalette.cs" Link="Export/MaterialPalette.cs" />
+    <Compile Include="../CoiMapper.Exporter/Export/SurfacePalette.cs" Link="Export/SurfacePalette.cs" />
+    <Compile Include="../CoiMapper.Exporter/Export/DisplayNames.cs" Link="Export/DisplayNames.cs" />
   </ItemGroup>
 
 </Project>

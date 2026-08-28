@@ -57,7 +57,8 @@ export function Inspector({ doc, selected, onClose }: Props) {
 
       <section>
         <h3>Terrain beneath</h3>
-        <Row label="Surface" value={tile.surface?.name ?? '—'} />
+        <Row label="Ground" value={tile.surface?.name ?? '—'} />
+        <Row label="Surface" value={tile.tileSurface?.name ?? 'None'} />
         <Row label="Height" value={tile.height === null ? '—' : `${tile.height.toFixed(1)} m`} />
         <Row
           label="Deposit"

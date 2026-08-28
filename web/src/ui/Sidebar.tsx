@@ -18,7 +18,8 @@ interface LayerRow {
 }
 
 const LAYERS: LayerRow[] = [
-  { name: 'terrain', label: 'Terrain', hint: 'Surface types with hillshading' },
+  { name: 'terrain', label: 'Terrain', hint: 'Natural ground, with hillshading' },
+  { name: 'surfaces', label: 'Surfaces', hint: 'Concrete, brick and metal flooring the player has laid', needs: (d) => !!d.layers.surfaces },
   { name: 'deposits', label: 'Deposits', hint: 'Ore and mineral bodies', needs: (d) => !!d.layers.deposits },
   { name: 'designations', label: 'Designations', hint: 'Mining, dumping and forestry areas', needs: (d) => !!d.layers.designations },
   { name: 'entities', label: 'Buildings', hint: 'Placed machines and structures' },
@@ -108,13 +109,23 @@ export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
       <section>
         <h3>Legend</h3>
         <div className="legend-group">
-          <h4>Surfaces</h4>
+          <h4>Ground</h4>
           {doc.manifest.surfaces.map((s) => (
             <div key={s.id} className="legend-row">
               <span className="swatch" style={{ background: s.color }} /> {s.name}
             </div>
           ))}
         </div>
+        {doc.manifest.tileSurfaces.length > 0 && (
+          <div className="legend-group">
+            <h4>Surfaces</h4>
+            {doc.manifest.tileSurfaces.map((t) => (
+              <div key={t.id} className="legend-row">
+                <span className="swatch" style={{ background: t.color }} /> {t.name}
+              </div>
+            ))}
+          </div>
+        )}
         {doc.manifest.deposits.length > 0 && (
           <div className="legend-group">
             <h4>Deposits</h4>
