@@ -31,8 +31,15 @@ export const ENUMS = {
    *
    * Declaration order is also the order the UI groups rows in, because the exporter sorts
    * by the ordinal. Reordering this list silently reorders the panel.
+   *
+   * Not every kind is shown. `RocketTransporter` is counted and exported but hidden by the
+   * panel — it is a one-off piece of campaign equipment rather than part of the fleet, and
+   * it consumes no vehicle quota. It has its own kind rather than falling into `Unknown`
+   * precisely so the panel can drop it by name, leaving `Unknown` to keep meaning "something
+   * the exporter did not recognise", which should always be shown.
    */
-  VehicleKind: ['Unknown', 'Truck', 'Excavator', 'TreeHarvester', 'TreePlanter', 'Locomotive', 'CargoWagon'],
+  VehicleKind: ['Unknown', 'Truck', 'Excavator', 'TreeHarvester', 'TreePlanter', 'Locomotive', 'CargoWagon',
+                'RocketTransporter'],
 };
 
 /**

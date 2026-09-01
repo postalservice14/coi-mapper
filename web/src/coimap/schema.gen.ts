@@ -23,8 +23,8 @@ export const TransportKindValues = ['Unknown', 'Conveyor', 'Pipe'] as const;
 export type NetworkKind = 'Electricity' | 'MechanicalShaft' | 'Rail';
 export const NetworkKindValues = ['Electricity', 'MechanicalShaft', 'Rail'] as const;
 
-export type VehicleKind = 'Unknown' | 'Truck' | 'Excavator' | 'TreeHarvester' | 'TreePlanter' | 'Locomotive' | 'CargoWagon';
-export const VehicleKindValues = ['Unknown', 'Truck', 'Excavator', 'TreeHarvester', 'TreePlanter', 'Locomotive', 'CargoWagon'] as const;
+export type VehicleKind = 'Unknown' | 'Truck' | 'Excavator' | 'TreeHarvester' | 'TreePlanter' | 'Locomotive' | 'CargoWagon' | 'RocketTransporter';
+export const VehicleKindValues = ['Unknown', 'Truck', 'Excavator', 'TreeHarvester', 'TreePlanter', 'Locomotive', 'CargoWagon', 'RocketTransporter'] as const;
 
 /** Per-tile raster planes, row-major, width*height elements each. */
 export const PLANES = {

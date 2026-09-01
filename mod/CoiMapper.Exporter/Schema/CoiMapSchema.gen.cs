@@ -29,7 +29,7 @@ namespace CoiMapper.Schema {
 
     public enum NetworkKind { Electricity, MechanicalShaft, Rail }
 
-    public enum VehicleKind { Unknown, Truck, Excavator, TreeHarvester, TreePlanter, Locomotive, CargoWagon }
+    public enum VehicleKind { Unknown, Truck, Excavator, TreeHarvester, TreePlanter, Locomotive, CargoWagon, RocketTransporter }
 
     /// <summary>Per-tile raster planes; name, dtype and archive path.</summary>
     public static class Planes {

@@ -101,8 +101,11 @@ const VEHICLES = [
   { proto: 'TreePlanterT1',  name: 'Tree planter',               kind: 'TreePlanter',  count: 4 },
   { proto: 'LocomotiveT1',   name: 'Locomotive (Diesel)',        kind: 'Locomotive',   count: 11 },
   { proto: 'CargoWagonT1',   name: 'Cargo wagon',                kind: 'CargoWagon',   count: 38 },
+  // Exported but hidden by the panel; here so the fixture exercises that path.
+  { proto: 'RocketTransporterT1', name: 'Rocket I',              kind: 'RocketTransporter', count: 1 },
 ];
 
+// The census counts everything the world holds, including kinds the panel hides.
 const RAIL_KINDS = new Set(['Locomotive', 'CargoWagon']);
 const sumWhere = (rail) =>
   VEHICLES.filter((v) => RAIL_KINDS.has(v.kind) === rail).reduce((n, v) => n + v.count, 0);

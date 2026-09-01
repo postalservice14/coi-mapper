@@ -229,6 +229,15 @@ try {
   const labels = await page.locator('dialog.fleet .counts li .grow').allTextContents();
   check('every row is distinguishable', new Set(labels).size === labels.length,
     `${new Set(labels).size} distinct of ${labels.length}`);
+
+  // The fixture carries a rocket transporter, which the census exports but the panel hides:
+  // campaign equipment rather than fleet, and it consumes no vehicle quota. The header is
+  // derived from the visible rows, so it must exclude it too rather than out-count the list.
+  const shownTotal = (await page.locator('dialog.fleet .legend-group h4 .muted').allTextContents())
+    .reduce((n, t) => n + Number(t.replace(/[^0-9]/g, '')), 0);
+  check('hidden kinds reach neither the rows nor the total',
+    !labels.some((l) => /rocket/i.test(l)) && shownTotal === 215 + 49,
+    `${labels.length} rows summing to ${shownTotal}`);
   await page.screenshot({ path: `${outDir}/6-vehicles.png` });
 
   // Escape must close the dialog without also clearing the map selection behind it.

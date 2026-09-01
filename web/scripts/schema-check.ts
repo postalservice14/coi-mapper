@@ -61,14 +61,21 @@ check('vehicle census is marked exported', fleet.exported === true, fleet.export
 // A brand-new enum: the case the "enums encoded as names" check above exists for.
 const kinds = fleet.types.map((v) => v.kind).join(',');
 check('vehicle kinds encoded as names',
-  kinds === 'Unknown,Unknown,Unknown,Truck,Truck,Excavator,Locomotive,CargoWagon', kinds);
+  kinds === 'Unknown,Unknown,Unknown,Truck,Truck,Excavator,Locomotive,CargoWagon,RocketTransporter',
+  kinds);
 
 // Rows must arrive grouped by kind ordinal, then count descending — the UI renders them
 // in file order rather than re-sorting, so a lost sort would show up as a jumbled panel.
 const order = fleet.types.map((v) => `${v.proto}:${v.count}`).join(' ');
 check('census rows keep kind-then-count order',
-  order === 'DozerA:8 DozerB:5 MysteryCraft:1 TruckLarge:7 TruckSmall:5 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6',
+  order === 'DozerA:8 DozerB:5 MysteryCraft:1 TruckLarge:7 TruckSmall:5 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6 RocketTransporterT1:1',
   order);
+
+// The panel hides rocket transporters, but the file must still carry them: the point of
+// hiding a kind in the UI is that the data stays available to anything that wants it.
+const rocket = fleet.types.find((v) => v.kind === 'RocketTransporter');
+check('hidden kinds are still exported', rocket?.proto === 'RocketTransporterT1' && rocket.count === 1,
+  rocket ? `${rocket.name} x${rocket.count}` : 'missing');
 
 // Two prototypes sharing a name would otherwise render as one label with two counts and
 // no way to tell them apart. This is the net under the exporter's fuel-variant naming.

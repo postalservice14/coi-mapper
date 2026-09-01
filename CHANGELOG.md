@@ -36,6 +36,12 @@ misrendering them.
   nothing. That "not counted" state is an explicit flag rather than an empty list, because an
   empty list is a real answer for a world with no vehicles.
 
+  Rocket transporters are counted and exported but not listed: they are campaign
+  equipment rather than fleet, and they consume no vehicle quota, so including one made
+  the panel's total disagree with the game's own. They carry their own kind rather than
+  falling into "Other", which keeps that group meaning "the exporter did not recognise
+  this" — something that should always be shown.
+
   Cargo ships are not counted; they have no equivalent fleet manager.
 
   Like the deposit, designation and paving layers, this is compile-verified against the real

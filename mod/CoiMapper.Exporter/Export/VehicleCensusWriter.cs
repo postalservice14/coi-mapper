@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Mafi;
 using Mafi.Core.Entities.Dynamic;
 using Mafi.Core.Trains;
 using Mafi.Core.Vehicles;
+using Mafi.Core.Vehicles.RocketTransporters;
 using CoiMapper.Schema;
 
 namespace CoiMapper.Export {
@@ -55,8 +57,14 @@ namespace CoiMapper.Export {
         // ── road vehicles ─────────────────────────────────────────────────────
         /// <summary>
         /// Walks the manager's typed sets, which is what makes the kind known without any
-        /// type tests — and means the four concrete classes, each in its own sub-namespace
+        /// type tests — and means those four concrete classes, each in its own sub-namespace
         /// (Mafi.Core.Vehicles.Trucks, .Excavators, and so on), never have to be named here.
+        ///
+        /// The rocket transporter is the exception: the manager keeps no set for it, so it
+        /// takes a type filter. It earns its own kind rather than being left to the pass
+        /// below because the panel hides it — it is campaign equipment rather than fleet, and
+        /// it consumes no vehicle quota — and hiding it by kind keeps Unknown meaning
+        /// "unrecognised", which must stay visible.
         ///
         /// AllVehicles is walked last as a leftover pass, so a vehicle class the game adds
         /// later, or one a mod introduces, is still counted — under Unknown — rather than
@@ -68,6 +76,8 @@ namespace CoiMapper.Export {
             Tally(tally, seen, fleet.Excavators, VehicleKind.Excavator, false, v => v.Prototype);
             Tally(tally, seen, fleet.TreeHarvesters, VehicleKind.TreeHarvester, false, v => v.Prototype);
             Tally(tally, seen, fleet.TreePlanters, VehicleKind.TreePlanter, false, v => v.Prototype);
+            Tally(tally, seen, fleet.AllVehicles.OfType<RocketTransporter>(),
+                VehicleKind.RocketTransporter, false, v => v.Prototype);
             Tally(tally, seen, fleet.AllVehicles, VehicleKind.Unknown, false, v => v.Prototype);
         }
 

@@ -201,6 +201,7 @@ namespace CoiMapper.SchemaCheck {
                 for (int i = 0; i < 4; i++) tally.Add("LocoDiesel", "Locomotive (Diesel)", VehicleKind.Locomotive, true);
                 for (int i = 0; i < 6; i++) tally.Add("WagonCargo", "Cargo wagon", VehicleKind.CargoWagon, true);
                 tally.Add("MysteryCraft", "Mystery craft", VehicleKind.Unknown, false);
+                tally.Add("RocketTransporterT1", "Rocket I", VehicleKind.RocketTransporter, false);
                 // Two prototypes the exporter could not tell apart by name or fuel: the
                 // disambiguation net must fall back to the ids rather than emit one label twice.
                 for (int i = 0; i < 8; i++) tally.Add("DozerA", "Bulldozer", VehicleKind.Unknown, false);
