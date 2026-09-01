@@ -24,6 +24,15 @@ export const ENUMS = {
   TransportKind: ['Unknown', 'Conveyor', 'Pipe'],
   /** Kind of power/connectivity graph an edge belongs to. */
   NetworkKind: ['Electricity', 'MechanicalShaft', 'Rail'],
+  /**
+   * What sort of machine a vehicle census row counts. `Unknown` leads so the C# default
+   * serialises as a real name, and so the exporter's leftover pass has somewhere to put a
+   * class the typed walks did not recognise.
+   *
+   * Declaration order is also the order the UI groups rows in, because the exporter sorts
+   * by the ordinal. Reordering this list silently reorders the panel.
+   */
+  VehicleKind: ['Unknown', 'Truck', 'Excavator', 'TreeHarvester', 'TreePlanter', 'Locomotive', 'CargoWagon'],
 };
 
 /**
@@ -62,6 +71,7 @@ export const STRUCTS = {
     { name: 'surfaces',      type: 'Surface[]',   doc: 'Legend for the surface plane.' },
     { name: 'tileSurfaces',  type: 'TileSurface[]', doc: 'Legend for the tileSurface plane. Absent in files written before that plane existed.' },
     { name: 'deposits',      type: 'Deposit[]',   doc: 'Legend for the deposit plane.' },
+    { name: 'vehicles',      type: 'VehicleCensus', doc: 'The fleet, counted per prototype. Absent in files written before this existed.' },
     { name: 'counts',        type: 'Counts' },
   ],
   GameInfo: [
@@ -107,6 +117,45 @@ export const STRUCTS = {
     { name: 'id',    type: 'int',    doc: 'Value stored in the deposit plane; 0 means none.' },
     { name: 'name',  type: 'string' },
     { name: 'color', type: 'string' },
+  ],
+  /**
+   * How many of one kind of machine the world holds.
+   *
+   * Deliberately self-contained rather than a key into protos.json: that dictionary is a
+   * by-product of the static-entity walk, so no vehicle prototype ever appears in it.
+   */
+  VehicleCount: [
+    { name: 'proto', type: 'string', doc: 'Prototype id. NOT a key into protos.json — see above.' },
+    { name: 'name',  type: 'string', doc: 'Display name, e.g. "Haul truck (dump) (Diesel)". The fuel variant is part of the game\'s own name.' },
+    { name: 'kind',  type: 'VehicleKind' },
+    { name: 'count', type: 'int' },
+  ],
+  /**
+   * Every mobile machine in the world, counted. Road vehicles and train cars only —
+   * cargo ships are not counted.
+   */
+  VehicleCensus: [
+    {
+      name: 'exported',
+      type: 'bool',
+      doc:
+        'False when this export carries no census at all — either written by a mod build ' +
+        'from before vehicles were exported, or the vehicle managers would not resolve. ' +
+        'Distinct from a world that genuinely has none, which exports with an empty types list.',
+    },
+    {
+      name: 'types',
+      type: 'VehicleCount[]',
+      doc:
+        'One row per prototype, ordered by kind (the VehicleKind declaration order), then ' +
+        'count descending, then name. The exporter fixes the order so two exports of the ' +
+        'same world agree byte for byte.',
+    },
+    { name: 'vehicles',  type: 'int', doc: 'Total road vehicles.' },
+    { name: 'trainCars', type: 'int', doc: 'Total locomotives and cargo wagons.' },
+    { name: 'trains',    type: 'int', doc: 'Assembled trains; the cars counted above belong to these.' },
+    { name: 'limit',     type: 'int', doc: "The game's vehicle quota. 0 when unknown." },
+    { name: 'limitLeft', type: 'int', doc: 'Quota remaining.' },
   ],
   /** One placed static entity. Short field names: there may be tens of thousands. */
   Entity: [

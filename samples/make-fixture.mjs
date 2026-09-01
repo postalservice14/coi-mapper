@@ -85,6 +85,38 @@ const DEPOSITS = [
   { id: 5, name: 'Limestone',   color: '#cfc6ae' },
 ];
 
+/**
+ * A synthetic fleet, in the order and shape the real exporter emits: grouped by
+ * VehicleKind's declaration order, then by count descending. The totals below are derived
+ * from these rows rather than written by hand, so the fixture cannot drift out of step
+ * with itself and the smoke test can assert the header exactly.
+ */
+const VEHICLES = [
+  { proto: 'TruckT3',        name: 'Haul truck (dump) (Diesel)', kind: 'Truck',        count: 97 },
+  { proto: 'TruckT1',        name: 'Truck (Diesel)',             kind: 'Truck',        count: 79 },
+  { proto: 'TruckT2',        name: 'Truck (Electric)',           kind: 'Truck',        count: 12 },
+  { proto: 'ExcavatorT2',    name: 'Excavator II (Diesel)',      kind: 'Excavator',    count: 14 },
+  { proto: 'ExcavatorT1',    name: 'Excavator I (Diesel)',       kind: 'Excavator',    count: 3 },
+  { proto: 'TreeHarvesterT1', name: 'Tree harvester',            kind: 'TreeHarvester', count: 6 },
+  { proto: 'TreePlanterT1',  name: 'Tree planter',               kind: 'TreePlanter',  count: 4 },
+  { proto: 'LocomotiveT1',   name: 'Locomotive (Diesel)',        kind: 'Locomotive',   count: 11 },
+  { proto: 'CargoWagonT1',   name: 'Cargo wagon',                kind: 'CargoWagon',   count: 38 },
+];
+
+const RAIL_KINDS = new Set(['Locomotive', 'CargoWagon']);
+const sumWhere = (rail) =>
+  VEHICLES.filter((v) => RAIL_KINDS.has(v.kind) === rail).reduce((n, v) => n + v.count, 0);
+
+const VEHICLE_CENSUS = {
+  exported: true,
+  types: VEHICLES,
+  vehicles: sumWhere(false),
+  trainCars: sumWhere(true),
+  trains: 9,
+  limit: 260,
+  limitLeft: 45,
+};
+
 function buildTerrain(size, seed) {
   const n = size * size;
   const height = new Uint16Array(n);
@@ -508,6 +540,7 @@ const manifest = {
   surfaces: SURFACES,
   tileSurfaces: TILE_SURFACES,
   deposits: DEPOSITS,
+  vehicles: VEHICLE_CENSUS,
   counts: {
     entities: world.entities.length,
     transports: world.transports.length,

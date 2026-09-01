@@ -29,6 +29,8 @@ namespace CoiMapper.Schema {
 
     public enum NetworkKind { Electricity, MechanicalShaft, Rail }
 
+    public enum VehicleKind { Unknown, Truck, Excavator, TreeHarvester, TreePlanter, Locomotive, CargoWagon }
+
     /// <summary>Per-tile raster planes; name, dtype and archive path.</summary>
     public static class Planes {
         public struct Def { public string Name; public string Dtype; public bool Optional;
@@ -81,6 +83,8 @@ namespace CoiMapper.Schema {
         public TileSurface[] TileSurfaces;
         /// <summary>Legend for the deposit plane.</summary>
         public Deposit[] Deposits;
+        /// <summary>The fleet, counted per prototype. Absent in files written before this existed.</summary>
+        public VehicleCensus Vehicles;
         public Counts Counts;
 
         public void WriteTo(JsonWriter w) {
@@ -94,6 +98,7 @@ namespace CoiMapper.Schema {
             w.Name("surfaces").BeginArray(); foreach (var v in Surfaces ?? new Surface[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("tileSurfaces").BeginArray(); foreach (var v in TileSurfaces ?? new TileSurface[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("deposits").BeginArray(); foreach (var v in Deposits ?? new Deposit[0]) { v.WriteTo(w); } w.EndArray();
+            w.Name("vehicles"); Vehicles.WriteTo(w);
             w.Name("counts"); Counts.WriteTo(w);
             w.EndObject();
         }
@@ -214,6 +219,53 @@ namespace CoiMapper.Schema {
             w.Name("id").Value(Id);
             w.Name("name").Value(Name);
             w.Name("color").Value(Color);
+            w.EndObject();
+        }
+    }
+
+    public sealed class VehicleCount {
+        /// <summary>Prototype id. NOT a key into protos.json — see above.</summary>
+        public string Proto;
+        /// <summary>Display name, e.g. "Haul truck (dump) (Diesel)". The fuel variant is part of the game's own name.</summary>
+        public string Name;
+        public VehicleKind Kind;
+        public int Count;
+
+        public void WriteTo(JsonWriter w) {
+            w.BeginObject();
+            w.Name("proto").Value(Proto);
+            w.Name("name").Value(Name);
+            w.Name("kind").Value(Kind.ToString());
+            w.Name("count").Value(Count);
+            w.EndObject();
+        }
+    }
+
+    public sealed class VehicleCensus {
+        /// <summary>False when this export carries no census at all — either written by a mod build from before vehicles were exported, or the vehicle managers would not resolve. Distinct from a world that genuinely has none, which exports with an empty types list.</summary>
+        public bool Exported;
+        /// <summary>One row per prototype, ordered by kind (the VehicleKind declaration order), then count descending, then name. The exporter fixes the order so two exports of the same world agree byte for byte.</summary>
+        public VehicleCount[] Types;
+        /// <summary>Total road vehicles.</summary>
+        public int Vehicles;
+        /// <summary>Total locomotives and cargo wagons.</summary>
+        public int TrainCars;
+        /// <summary>Assembled trains; the cars counted above belong to these.</summary>
+        public int Trains;
+        /// <summary>The game's vehicle quota. 0 when unknown.</summary>
+        public int Limit;
+        /// <summary>Quota remaining.</summary>
+        public int LimitLeft;
+
+        public void WriteTo(JsonWriter w) {
+            w.BeginObject();
+            w.Name("exported").Value(Exported);
+            w.Name("types").BeginArray(); foreach (var v in Types ?? new VehicleCount[0]) { v.WriteTo(w); } w.EndArray();
+            w.Name("vehicles").Value(Vehicles);
+            w.Name("trainCars").Value(TrainCars);
+            w.Name("trains").Value(Trains);
+            w.Name("limit").Value(Limit);
+            w.Name("limitLeft").Value(LimitLeft);
             w.EndObject();
         }
     }

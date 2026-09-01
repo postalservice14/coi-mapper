@@ -197,6 +197,9 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
     if (!ready) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return;
+      // An open modal owns the keyboard. Without this, Escape would also clear the
+      // selection and F, [ and ] would refit and turn the map behind the dialog.
+      if (document.querySelector('dialog[open]')) return;
       if (e.key === 'f' || e.key === 'F') sceneRef.current?.fitToMap();
       if (e.key === '[') sceneRef.current?.rotateBy(-1);
       if (e.key === ']') sceneRef.current?.rotateBy(1);

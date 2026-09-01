@@ -23,6 +23,9 @@ export const TransportKindValues = ['Unknown', 'Conveyor', 'Pipe'] as const;
 export type NetworkKind = 'Electricity' | 'MechanicalShaft' | 'Rail';
 export const NetworkKindValues = ['Electricity', 'MechanicalShaft', 'Rail'] as const;
 
+export type VehicleKind = 'Unknown' | 'Truck' | 'Excavator' | 'TreeHarvester' | 'TreePlanter' | 'Locomotive' | 'CargoWagon';
+export const VehicleKindValues = ['Unknown', 'Truck', 'Excavator', 'TreeHarvester', 'TreePlanter', 'Locomotive', 'CargoWagon'] as const;
+
 /** Per-tile raster planes, row-major, width*height elements each. */
 export const PLANES = {
   /** Terrain height, game units, per tile. */
@@ -88,6 +91,8 @@ export interface Manifest {
   tileSurfaces: TileSurface[];
   /** Legend for the deposit plane. */
   deposits: Deposit[];
+  /** The fleet, counted per prototype. Absent in files written before this existed. */
+  vehicles: VehicleCensus;
   counts: Counts;
 }
 
@@ -149,6 +154,32 @@ export interface Deposit {
   id: number;
   name: string;
   color: string;
+}
+
+export interface VehicleCount {
+  /** Prototype id. NOT a key into protos.json — see above. */
+  proto: string;
+  /** Display name, e.g. "Haul truck (dump) (Diesel)". The fuel variant is part of the game's own name. */
+  name: string;
+  kind: VehicleKind;
+  count: number;
+}
+
+export interface VehicleCensus {
+  /** False when this export carries no census at all — either written by a mod build from before vehicles were exported, or the vehicle managers would not resolve. Distinct from a world that genuinely has none, which exports with an empty types list. */
+  exported: boolean;
+  /** One row per prototype, ordered by kind (the VehicleKind declaration order), then count descending, then name. The exporter fixes the order so two exports of the same world agree byte for byte. */
+  types: VehicleCount[];
+  /** Total road vehicles. */
+  vehicles: number;
+  /** Total locomotives and cargo wagons. */
+  trainCars: number;
+  /** Assembled trains; the cars counted above belong to these. */
+  trains: number;
+  /** The game's vehicle quota. 0 when unknown. */
+  limit: number;
+  /** Quota remaining. */
+  limitLeft: number;
 }
 
 export interface Entity {

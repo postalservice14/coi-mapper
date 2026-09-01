@@ -1,9 +1,9 @@
 {
   "id": "CoiMapper",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "display_name": "CoiMapper Exporter",
   "description_short": "Exports your world to a .coimap file you can explore as an interactive map in the browser. Read-only, and safe to add to or remove from an existing save.",
-  "description_long": "<b>CoiMapper Exporter</b>\n\nWrites your world to a <i>.coimap</i> file that the coi-mapper web app renders as a fast, zoomable 2D map of your whole base.\n\n<b>What it exports</b>\n- Terrain heights, surface materials and ocean\n- Every placed building, with its real footprint, prototype and state\n- Prototype names, categories and colours\n\n<b>How to use</b>\n1. Load a save. The mod exports once on load.\n2. Save the game at any time to refresh the map.\n3. Open the exported file in the web app.\n\nExports are written to <i>%APPDATA%/Captain of Industry/CoiMapper/</i>, named after the save.\n\n<b>Safety</b>\n<i>This mod is read-only.</i> It registers no prototypes, adds no serialisable state and changes no gameplay, so it can be added to and removed from existing saves freely. A failed export is caught and logged rather than interrupting the game.\n\n<b>Open source</b>\nMIT licensed. Source, changelog and the web app are on GitHub.",
+  "description_long": "<b>CoiMapper Exporter</b>\n\nWrites your world to a <i>.coimap</i> file that the coi-mapper web app renders as a fast, zoomable 2D map of your whole base.\n\n<b>What it exports</b>\n- Terrain heights, surface materials and ocean\n- Every placed building, with its real footprint, prototype and state\n- Prototype names, categories and colours\\n- How many of each vehicle and train car you run\n\n<b>How to use</b>\n1. Load a save. The mod exports once on load.\n2. Save the game at any time to refresh the map.\n3. Open the exported file in the web app.\n\nExports are written to <i>%APPDATA%/Captain of Industry/CoiMapper/</i>, named after the save.\n\n<b>Safety</b>\n<i>This mod is read-only.</i> It registers no prototypes, adds no serialisable state and changes no gameplay, so it can be added to and removed from existing saves freely. A failed export is caught and logged rather than interrupting the game.\n\n<b>Open source</b>\nMIT licensed. Source, changelog and the web app are on GitHub.",
   "authors": [
     "postalservice14"
   ],

@@ -70,6 +70,17 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
   // no legend field at all. Absorb that here rather than guarding every reader.
   if (!manifest.tileSurfaces) manifest.tileSurfaces = [];
 
+  // Likewise the vehicle census. An export written before it has no census object at all,
+  // which is a different thing from a world that genuinely has no vehicles — hence the
+  // explicit flag rather than an empty list standing in for both. The schema version is
+  // deliberately not bumped for either field: an added manifest field is not a breaking
+  // change, and bumping would make every existing export unreadable to gain nothing.
+  if (!manifest.vehicles) {
+    manifest.vehicles = {
+      exported: false, types: [], vehicles: 0, trainCars: 0, trains: 0, limit: 0, limitLeft: 0,
+    };
+  }
+
   const { width, height } = manifest.map;
   if (!(width > 0 && height > 0)) throw new CoiMapError(`Invalid map size ${width}×${height}.`);
   const tiles = width * height;

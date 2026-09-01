@@ -7,6 +7,7 @@ import { DropZone } from './DropZone';
 import { Sidebar } from './Sidebar';
 import { Inspector } from './Inspector';
 import { StatusBar } from './StatusBar';
+import { VehiclesDialog } from './VehiclesDialog';
 
 const DEFAULT_VISIBILITY: Record<LayerName, boolean> = {
   terrain: true,
@@ -25,6 +26,7 @@ export function App() {
   const [selected, setSelected] = useState(-1);
   const [hit, setHit] = useState<TileHit | null>(null);
   const [focus, setFocus] = useState<{ tx: number; ty: number } | null>(null);
+  const [showFleet, setShowFleet] = useState(false);
 
   const toggle = useCallback((layer: LayerName) => {
     setVisibility((v) => ({ ...v, [layer]: !v[layer] }));
@@ -46,7 +48,7 @@ export function App() {
   }, [doc]);
   useEffect(() => () => { if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl); }, [thumbnailUrl]);
 
-  useEffect(() => { setSelected(-1); setFocus(null); }, [doc]);
+  useEffect(() => { setSelected(-1); setFocus(null); setShowFleet(false); }, [doc]);
 
   if (!doc) return <DropZone onFile={load} progress={progress} error={error} />;
 
@@ -66,6 +68,7 @@ export function App() {
             {fileName && <><span className="sep">·</span><code>{fileName}</code></>}
           </p>
         </div>
+        <button onClick={() => setShowFleet(true)}>Vehicles</button>
         <button onClick={reset}>Load another map</button>
       </header>
 
@@ -85,6 +88,7 @@ export function App() {
       </div>
 
       <StatusBar doc={doc} hit={hit} />
+      <VehiclesDialog census={manifest.vehicles} open={showFleet} onClose={() => setShowFleet(false)} />
     </div>
   );
 }

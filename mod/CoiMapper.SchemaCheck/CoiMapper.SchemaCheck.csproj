@@ -24,6 +24,7 @@
     <Compile Include="../CoiMapper.Exporter/Export/MaterialPalette.cs" Link="Export/MaterialPalette.cs" />
     <Compile Include="../CoiMapper.Exporter/Export/SurfacePalette.cs" Link="Export/SurfacePalette.cs" />
     <Compile Include="../CoiMapper.Exporter/Export/DisplayNames.cs" Link="Export/DisplayNames.cs" />
+    <Compile Include="../CoiMapper.Exporter/Export/VehicleTally.cs" Link="Export/VehicleTally.cs" />
   </ItemGroup>
 
 </Project>

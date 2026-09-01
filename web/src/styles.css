@@ -228,3 +228,30 @@ kbd {
   gap: 4px;
 }
 .map-controls button { background: rgba(22, 27, 34, 0.85); }
+
+/* Vehicle census dialog. Native <dialog> so Escape, the backdrop, the focus trap and
+   background inertness come from the browser rather than from hand-rolled JS. Chrome's
+   UA stylesheet forces background-color: Canvas and color: CanvasText on a dialog, so
+   both are set explicitly here rather than inherited. */
+dialog.fleet {
+  width: min(520px, calc(100vw - 48px));
+  max-height: min(70vh, 640px);
+  padding: 0;
+  overflow: auto;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+dialog.fleet::backdrop { background: rgba(6, 9, 13, 0.6); }
+dialog.fleet header {
+  position: sticky;
+  top: 0;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+}
+dialog.fleet header p { margin: 0; font-size: 12px; }
+dialog.fleet section { padding: 12px 16px; }
+dialog.fleet .legend-group + .legend-group { margin-top: 14px; }

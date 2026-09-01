@@ -53,10 +53,14 @@ namespace CoiMapper.Export {
                     w.EndObject();
                 });
 
+                // Vehicles and trains are dynamic entities, so the static-entity walk above
+                // cannot see them; they come from their own managers.
+                var vehicles = VehicleCensusWriter.Build(m_resolver);
+
                 var counts = new Counts {
                     Entities = entityCount, Transports = 0, Edges = 0, Protos = usedProtos.Count,
                 };
-                WriteManifest(archive, map, surfaces, tileSurfaces, deposits, counts, gameName);
+                WriteManifest(archive, map, surfaces, tileSurfaces, deposits, vehicles, counts, gameName);
             }
         }
 
@@ -300,9 +304,14 @@ namespace CoiMapper.Export {
         }
 
         // ── manifest ──────────────────────────────────────────────────────────
+        /// <param name="vehicles">
+        /// Required rather than optional on purpose. The generated Manifest writes nested
+        /// structs without a null guard, so an unset census would be a NullReferenceException
+        /// on the save path that the compiler could not have caught.
+        /// </param>
         private void WriteManifest(
             CoiMapArchive archive, MapInfo map, List<Surface> surfaces, List<TileSurface> tileSurfaces,
-            List<Deposit> deposits,
+            List<Deposit> deposits, VehicleCensus vehicles,
             Counts counts, string gameName) {
             // The game's version is not exposed as a service, but the assembly this mod is
             // running against carries it, which is the version that actually produced the data.
@@ -322,6 +331,7 @@ namespace CoiMapper.Export {
                 Surfaces = surfaces.ToArray(),
                 TileSurfaces = tileSurfaces.ToArray(),
                 Deposits = deposits.ToArray(),
+                Vehicles = vehicles,
                 Counts = counts,
             };
             archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);

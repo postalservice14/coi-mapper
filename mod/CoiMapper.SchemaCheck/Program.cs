@@ -190,6 +190,18 @@ namespace CoiMapper.SchemaCheck {
                     w.EndObject();
                 });
 
+                // Built through the real VehicleTally rather than as a literal, so the
+                // aggregation, the kind+proto keying and the sort are what get tested.
+                // Trucks are added out of count order and in two batches to prove both.
+                var tally = new VehicleTally();
+                for (int i = 0; i < 3; i++) tally.Add("TruckSmall", "Truck (Diesel)", VehicleKind.Truck, false);
+                for (int i = 0; i < 7; i++) tally.Add("TruckLarge", "Haul truck \"big\" — ünïcode", VehicleKind.Truck, false);
+                for (int i = 0; i < 2; i++) tally.Add("TruckSmall", "Truck (Diesel)", VehicleKind.Truck, false);
+                tally.Add("ExcavatorT1", "Excavator", VehicleKind.Excavator, false);
+                for (int i = 0; i < 4; i++) tally.Add("LocoDiesel", "Locomotive (Diesel)", VehicleKind.Locomotive, true);
+                for (int i = 0; i < 6; i++) tally.Add("WagonCargo", "Cargo wagon", VehicleKind.CargoWagon, true);
+                tally.Add("MysteryCraft", "Mystery craft", VehicleKind.Unknown, false);
+
                 var manifest = new Manifest {
                     SchemaVersion = CoiMapSchema.SchemaVersion,
                     Generator = "CoiMapper.SchemaCheck",
@@ -200,6 +212,7 @@ namespace CoiMapper.SchemaCheck {
                     Surfaces = surfaces.ToArray(),
                     TileSurfaces = tileSurfaces.ToArray(),
                     Deposits = deposits.ToArray(),
+                    Vehicles = tally.ToCensus(trains: 2, limit: 40, limitLeft: 27),
                     Counts = new Counts { Entities = entities.Count, Transports = 1, Edges = 1, Protos = entities.Count },
                 };
                 archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);

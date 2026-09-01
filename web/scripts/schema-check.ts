@@ -52,6 +52,41 @@ check('enums encoded as names', states === 'Operating,Constructing,Broken,Operat
 const unicode = doc.entities[2]?.proto;
 check('unicode and quotes escape correctly', unicode === 'Pump "A" — ünïcode', JSON.stringify(unicode));
 
+// ── the vehicle census ───────────────────────────────────────────────────────
+// Written through the exporter's real VehicleTally, so these assertions cover the
+// aggregation and the sort, not just the serialisation.
+const fleet = doc.manifest.vehicles;
+check('vehicle census is marked exported', fleet.exported === true, fleet.exported);
+
+// A brand-new enum: the case the "enums encoded as names" check above exists for.
+const kinds = fleet.types.map((v) => v.kind).join(',');
+check('vehicle kinds encoded as names',
+  kinds === 'Unknown,Truck,Truck,Excavator,Locomotive,CargoWagon', kinds);
+
+// Rows must arrive grouped by kind ordinal, then count descending — the UI renders them
+// in file order rather than re-sorting, so a lost sort would show up as a jumbled panel.
+const order = fleet.types.map((v) => `${v.proto}:${v.count}`).join(' ');
+check('census rows keep kind-then-count order',
+  order === 'MysteryCraft:1 TruckLarge:7 TruckSmall:5 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6', order);
+
+// TruckSmall was added in two separate batches of 3 and 2.
+const small = fleet.types.find((v) => v.proto === 'TruckSmall');
+check('repeated prototypes aggregate into one row', small?.count === 5, small?.count);
+
+const fleetName = fleet.types.find((v) => v.proto === 'TruckLarge')?.name;
+check('vehicle names escape correctly', fleetName === 'Haul truck "big" — ünïcode', JSON.stringify(fleetName));
+
+// Totals are accumulated separately from the rows, so they can drift apart.
+const roadRows = fleet.types.filter((v) => v.kind !== 'Locomotive' && v.kind !== 'CargoWagon');
+const railRows = fleet.types.filter((v) => v.kind === 'Locomotive' || v.kind === 'CargoWagon');
+const sum = (rows: typeof fleet.types) => rows.reduce((n, v) => n + v.count, 0);
+check('census totals match the rows they came from',
+  fleet.vehicles === sum(roadRows) && fleet.trainCars === sum(railRows),
+  `${fleet.vehicles} road / ${fleet.trainCars} rail`);
+check('train and quota figures survive',
+  fleet.trains === 2 && fleet.limit === 40 && fleet.limitLeft === 27,
+  `${fleet.trains} trains, limit ${fleet.limit}/${fleet.limitLeft} free`);
+
 // The plane was filled with x*1000 + y, which is asymmetric — a transposed or
 // column-major write would fail here rather than looking plausible.
 const h = doc.planes.height!;

@@ -14,6 +14,32 @@ misrendering them.
 
 ### Added
 
+- **A count of every vehicle and train car, behind a "Vehicles" button in the header.** The
+  export had no fleet data at all: vehicles are *dynamic* entities, and the exporter's walk
+  is over `IStaticEntity`, so trucks and excavators were invisible to it by construction —
+  the only truck-shaped things in an export were buildings like the vehicle depot and ramps.
+  The mod now reads the vehicles manager and the trains manager and counts machines per
+  prototype, which reproduces the game's own labels including the fuel variant: "97 Haul
+  truck (dump) (Diesel)". Locomotives and cargo wagons are counted the same way, with the
+  number of assembled trains reported alongside rather than as a row of its own. The panel
+  also shows the vehicle quota, which is the one figure that can be checked against the
+  game's own screen.
+
+  Counts only — no positions — so this does not put vehicles on the map, which would need a
+  further format change.
+
+  The schema version is deliberately **not** bumped. The census is a new manifest field, and
+  an added field is not a breaking change: exports written before it still load and report
+  the fleet as not counted. Bumping would have made every existing export unreadable to gain
+  nothing. That "not counted" state is an explicit flag rather than an empty list, because an
+  empty list is a real answer for a world with no vehicles.
+
+  Cargo ships are not counted; they have no equivalent fleet manager.
+
+  Like the deposit, designation and paving layers, this is compile-verified against the real
+  game assemblies and covered by the cross-language contract test, but has **not yet been run
+  in the game** — that is still the real check.
+
 - **A "Surfaces" layer for player-placed paving** — concrete, brick, metal flooring — in a new
   optional `tileSurface` plane with its own legend. This is a genuinely new read: the existing
   `surface` plane is a misnomer that carries the *natural ground material*, so nothing on the

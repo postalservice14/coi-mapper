@@ -201,6 +201,47 @@ try {
     await page.screenshot({ path: `${outDir}/4-inspector.png` });
   }
 
+  // ── the vehicle census dialog ───────────────────────────────────────────────
+  // Sequenced after the rotation checks on purpose: MapView listens for keys on the window,
+  // and an open dialog must not let f, [ or ] reach it.
+  await page.locator('.topbar button', { hasText: 'Vehicles' }).click();
+  await page.waitForSelector('dialog.fleet[open]', { timeout: 5000 });
+  await page.waitForTimeout(200);
+
+  const fleetRows = await page.locator('dialog.fleet .counts li').count();
+  const fleetGroups = await page.locator('dialog.fleet .legend-group').count();
+  check('vehicle dialog lists the fleet', fleetRows === 9 && fleetGroups === 6,
+    `${fleetRows} rows in ${fleetGroups} groups`);
+
+  // The fixture's totals are derived from its rows, so an exact match proves the census
+  // survived the round trip rather than being recomputed in the UI. The separators are
+  // spaced by CSS margins, so textContent has no whitespace around them.
+  const fleetSummary = (await page.locator('dialog.fleet header p').textContent())?.replace(/\s+/g, ' ').trim();
+  check('vehicle dialog summarises the totals',
+    fleetSummary === '215 vehicles·49 cars in 9 trains·limit 260, 45 free', fleetSummary ?? '');
+
+  const firstRow = (await page.locator('dialog.fleet .counts li').first().textContent())?.trim();
+  check('rows carry the game\'s own names', firstRow === 'Haul truck (dump) (Diesel)97', firstRow ?? '');
+  await page.screenshot({ path: `${outDir}/6-vehicles.png` });
+
+  // Escape must close the dialog without also clearing the map selection behind it.
+  const selectedBefore = await page.locator('.inspector').count();
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(250);
+  const stillOpen = await page.locator('dialog.fleet[open]').count();
+  const selectedAfter = await page.locator('.inspector').count();
+  check('escape closes the dialog only', stillOpen === 0 && selectedAfter === selectedBefore,
+    `dialog ${stillOpen ? 'open' : 'closed'}, inspector ${selectedBefore} -> ${selectedAfter}`);
+
+  // A dialog that stole layout or pointer events shows up here rather than as a mystery later.
+  const afterFleet = await page.evaluate(() => {
+    const c = document.querySelector('canvas.map-canvas');
+    return Math.abs(c.getBoundingClientRect().width - c.parentElement.getBoundingClientRect().width);
+  });
+  check('canvas is unaffected by the dialog', afterFleet <= 1, `off by ${afterFleet.toFixed(0)} px`);
+  const liveTile = await tileAt(40, 40);
+  check('map still responds after the dialog closes', !!liveTile, liveTile ?? 'no tile reported');
+
   check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 2).join(' | '));
 } catch (err) {
   await page.screenshot({ path: `${outDir}/error.png` }).catch(() => {});
