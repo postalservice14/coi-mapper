@@ -92,11 +92,11 @@ const DEPOSITS = [
  * with itself and the smoke test can assert the header exactly.
  */
 const VEHICLES = [
-  { proto: 'TruckT3',        name: 'Haul truck (dump) (Diesel)', kind: 'Truck',        count: 97 },
-  { proto: 'TruckT1',        name: 'Truck (Diesel)',             kind: 'Truck',        count: 79 },
-  { proto: 'TruckT2',        name: 'Truck (Electric)',           kind: 'Truck',        count: 12 },
-  { proto: 'ExcavatorT2',    name: 'Excavator II (Diesel)',      kind: 'Excavator',    count: 14 },
-  { proto: 'ExcavatorT1',    name: 'Excavator I (Diesel)',       kind: 'Excavator',    count: 3 },
+  { proto: 'TruckT3Loose',   name: 'Haul truck (dump) (Diesel)',   kind: 'Truck',     count: 97 },
+  { proto: 'TruckT3LooseH',  name: 'Haul truck (dump) (Hydrogen)', kind: 'Truck',     count: 79 },
+  { proto: 'TruckT2',        name: 'Truck (Diesel)',               kind: 'Truck',     count: 12 },
+  { proto: 'ExcavatorT3',    name: 'Mega excavator (Diesel)',      kind: 'Excavator', count: 14 },
+  { proto: 'ExcavatorT3H',   name: 'Mega excavator (Hydrogen)',    kind: 'Excavator', count: 3 },
   { proto: 'TreeHarvesterT1', name: 'Tree harvester',            kind: 'TreeHarvester', count: 6 },
   { proto: 'TreePlanterT1',  name: 'Tree planter',               kind: 'TreePlanter',  count: 4 },
   { proto: 'LocomotiveT1',   name: 'Locomotive (Diesel)',        kind: 'Locomotive',   count: 11 },

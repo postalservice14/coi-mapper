@@ -61,13 +61,25 @@ check('vehicle census is marked exported', fleet.exported === true, fleet.export
 // A brand-new enum: the case the "enums encoded as names" check above exists for.
 const kinds = fleet.types.map((v) => v.kind).join(',');
 check('vehicle kinds encoded as names',
-  kinds === 'Unknown,Truck,Truck,Excavator,Locomotive,CargoWagon', kinds);
+  kinds === 'Unknown,Unknown,Unknown,Truck,Truck,Excavator,Locomotive,CargoWagon', kinds);
 
 // Rows must arrive grouped by kind ordinal, then count descending — the UI renders them
 // in file order rather than re-sorting, so a lost sort would show up as a jumbled panel.
 const order = fleet.types.map((v) => `${v.proto}:${v.count}`).join(' ');
 check('census rows keep kind-then-count order',
-  order === 'MysteryCraft:1 TruckLarge:7 TruckSmall:5 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6', order);
+  order === 'DozerA:8 DozerB:5 MysteryCraft:1 TruckLarge:7 TruckSmall:5 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6',
+  order);
+
+// Two prototypes sharing a name would otherwise render as one label with two counts and
+// no way to tell them apart. This is the net under the exporter's fuel-variant naming.
+const dozers = fleet.types.filter((v) => v.name.startsWith('Bulldozer')).map((v) => v.name);
+check('colliding names fall back to the prototype id',
+  dozers.join(' / ') === 'Bulldozer (DozerA) / Bulldozer (DozerB)', dozers.join(' / '));
+
+// Every label in the panel must be distinct, however it got that way.
+const names = fleet.types.map((v) => v.name);
+check('every census row has a unique label', new Set(names).size === names.length,
+  `${new Set(names).size} distinct of ${names.length}`);
 
 // TruckSmall was added in two separate batches of 3 and 2.
 const small = fleet.types.find((v) => v.proto === 'TruckSmall');

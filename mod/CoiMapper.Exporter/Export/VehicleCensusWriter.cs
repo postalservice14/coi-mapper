@@ -132,11 +132,33 @@ namespace CoiMapper.Export {
         }
 
         /// <summary>
-        /// The game's own localised name, which already carries the fuel variant — "Haul
-        /// truck (dump) (Diesel)". Falls back to a name derived from the id, as the terrain
-        /// material legend does, if the string table has no entry.
+        /// The game's own localised name, with the fuel variant appended.
+        ///
+        /// The name alone is not unique. TruckT3Loose and TruckT3LooseH are separate
+        /// prototypes both called "Haul truck (dump)", differing only in that one burns
+        /// diesel and the other hydrogen — the game tells them apart by icon, which a list
+        /// of names cannot borrow, so without the fuel the panel shows the same label twice
+        /// with two different counts and no way to tell which is which. The game models the
+        /// distinction explicitly: every fuel variant belongs to a VehicleGroupProto whose
+        /// stated purpose is to aggregate them.
+        ///
+        /// Skipped where the name already says it, so "Diesel locomotive" does not become
+        /// "Diesel locomotive (Diesel)".
         /// </summary>
         private static string NameOf(DynamicEntityProto proto) {
+            string name = LocalisedName(proto);
+            string fuel = FuelName(proto);
+            if (fuel != null && name.IndexOf(fuel, StringComparison.OrdinalIgnoreCase) < 0) {
+                return name + " (" + fuel + ")";
+            }
+            return name;
+        }
+
+        /// <summary>
+        /// Falls back to a name derived from the id, as the terrain material legend does, if
+        /// the string table has no entry.
+        /// </summary>
+        private static string LocalisedName(DynamicEntityProto proto) {
             try {
                 string localised = proto.Strings.Name.TranslatedString;
                 if (!string.IsNullOrEmpty(localised)) return localised;
@@ -144,6 +166,24 @@ namespace CoiMapper.Export {
                 // A prototype with no string table entry is not worth failing the export for.
             }
             return DisplayNames.FromId(proto.Id.Value);
+        }
+
+        /// <summary>
+        /// The fuel product's name — "Diesel", "Hydrogen" — or null for anything that does
+        /// not burn a fuel. Both road vehicles and locomotives reach it through
+        /// IEntityWithFuelTankProto, so this needs no per-family branching.
+        /// </summary>
+        private static string FuelName(DynamicEntityProto proto) {
+            try {
+                var burner = proto as IEntityWithFuelTankProto;
+                if (burner == null) return null;
+                var tank = burner.FuelTankProto;
+                if (!tank.HasValue) return null;
+                string fuel = tank.Value.Product.Strings.Name.TranslatedString;
+                return string.IsNullOrEmpty(fuel) ? null : fuel;
+            } catch (Exception) {
+                return null;
+            }
         }
 
         private static T TryResolve<T>(DependencyResolver resolver) where T : class {

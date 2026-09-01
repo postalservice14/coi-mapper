@@ -53,6 +53,7 @@ namespace CoiMapper.Export {
             // Dictionary iteration order is unspecified, so without an explicit sort two
             // exports of the same unchanged world would differ byte for byte.
             rows.Sort(Compare);
+            Disambiguate(rows);
 
             return new VehicleCensus {
                 Exported = true,
@@ -63,6 +64,30 @@ namespace CoiMapper.Export {
                 Limit = limit,
                 LimitLeft = limitLeft,
             };
+        }
+
+        /// <summary>
+        /// Makes every row's name unique by falling back to the prototype id where two rows
+        /// would otherwise read the same.
+        ///
+        /// The exporter already separates the common case — fuel variants like the diesel
+        /// and hydrogen "Haul truck (dump)" — by appending the fuel. This is the net under
+        /// that: two rows with one label and two counts is unreadable, and the panel gives
+        /// no other way to tell them apart, so a name collision should degrade to an ugly
+        /// row rather than an ambiguous one. Nothing should reach it today; a later game
+        /// version or a mod might.
+        /// </summary>
+        private static void Disambiguate(List<VehicleCount> rows) {
+            var byName = new Dictionary<string, int>();
+            foreach (var row in rows) {
+                int seen;
+                byName.TryGetValue(row.Name, out seen);
+                byName[row.Name] = seen + 1;
+            }
+
+            foreach (var row in rows) {
+                if (byName[row.Name] > 1) row.Name = row.Name + " (" + row.Proto + ")";
+            }
         }
 
         /// <summary>

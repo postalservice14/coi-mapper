@@ -19,8 +19,10 @@ misrendering them.
   is over `IStaticEntity`, so trucks and excavators were invisible to it by construction —
   the only truck-shaped things in an export were buildings like the vehicle depot and ramps.
   The mod now reads the vehicles manager and the trains manager and counts machines per
-  prototype, which reproduces the game's own labels including the fuel variant: "97 Haul
-  truck (dump) (Diesel)". Locomotives and cargo wagons are counted the same way, with the
+  prototype, and appends the fuel each one burns: "97 Haul truck (dump) (Diesel)". That last
+  part is not decoration. `TruckT3Loose` and `TruckT3LooseH` are separate prototypes with the
+  same name, differing only in diesel versus hydrogen, and the game tells them apart by icon —
+  which a list of names cannot borrow. Locomotives and cargo wagons are counted the same way, with the
   number of assembled trains reported alongside rather than as a row of its own. The panel
   also shows the vehicle quota, which is the one figure that can be checked against the
   game's own screen.

@@ -222,6 +222,13 @@ try {
 
   const firstRow = (await page.locator('dialog.fleet .counts li').first().textContent())?.trim();
   check('rows carry the game\'s own names', firstRow === 'Haul truck (dump) (Diesel)97', firstRow ?? '');
+
+  // The fixture carries the diesel and hydrogen "Haul truck (dump)", which are separate
+  // prototypes the game distinguishes only by icon. Two rows reading the same is the bug
+  // this guards: a count you cannot attribute to anything is worse than no count.
+  const labels = await page.locator('dialog.fleet .counts li .grow').allTextContents();
+  check('every row is distinguishable', new Set(labels).size === labels.length,
+    `${new Set(labels).size} distinct of ${labels.length}`);
   await page.screenshot({ path: `${outDir}/6-vehicles.png` });
 
   // Escape must close the dialog without also clearing the map selection behind it.
