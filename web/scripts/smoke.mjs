@@ -240,6 +240,41 @@ try {
     `${labels.length} rows summing to ${shownTotal}`);
   await page.screenshot({ path: `${outDir}/6-vehicles.png` });
 
+  // ── the same rows, cut by zone ──────────────────────────────────────────────
+  // The file stores one row per prototype per zone, so the two groupings are two sums over
+  // the same rows. What is worth proving is that they agree: the split prototype appears
+  // twice here and once by kind, but the fleet is the same size either way.
+  await page.locator('dialog.fleet .groupby button', { hasText: 'Zone' }).click();
+  await page.waitForTimeout(200);
+
+  const zoneHeads = (await page.locator('dialog.fleet .legend-group h4').allTextContents())
+    .map((t) => t.replace(/\s+/g, ' ').trim());
+  check('zone view groups in the file\'s zone order, trains last',
+    zoneHeads.join(' | ') === 'Default 22 | Mining north 156 | Smelter yard 37 | Trains 49',
+    zoneHeads.join(' | '));
+
+  const zoneRows = await page.locator('dialog.fleet .counts li').count();
+  check('a prototype in two zones is two rows here', zoneRows === 10, `${zoneRows} rows`);
+
+  const zoneSummary = (await page.locator('dialog.fleet header p').textContent())?.replace(/\s+/g, ' ').trim();
+  check('regrouping does not change the totals', zoneSummary === fleetSummary, zoneSummary ?? '');
+
+  // Rolling stock has no zone, so its group is the one without a colour.
+  const swatches = await page.locator('dialog.fleet .legend-group h4 .swatch').count();
+  check('zone groups carry the game\'s own zone colour', swatches === 3, `${swatches} swatches`);
+
+  await page.screenshot({ path: `${outDir}/7-vehicles-by-zone.png` });
+
+  // Back to kind. The counts must be identical to the first time round: the panel sums
+  // rows into fresh objects, and a version that added them up in place would double the
+  // split prototype here rather than anywhere a single render could show.
+  await page.locator('dialog.fleet .groupby button', { hasText: 'Kind' }).click();
+  await page.waitForTimeout(200);
+  const backFirst = (await page.locator('dialog.fleet .counts li').first().textContent())?.trim();
+  const backRows = await page.locator('dialog.fleet .counts li').count();
+  check('regrouping leaves the census unchanged',
+    backFirst === firstRow && backRows === fleetRows, `${backFirst} in ${backRows} rows`);
+
   // Escape must close the dialog without also clearing the map selection behind it.
   const selectedBefore = await page.locator('.inspector').count();
   await page.keyboard.press('Escape');

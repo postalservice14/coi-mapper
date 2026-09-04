@@ -190,22 +190,35 @@ namespace CoiMapper.SchemaCheck {
                     w.EndObject();
                 });
 
+                // The player's logistics zones. The default zone leads, as the writer emits
+                // it, and the panel groups in this order rather than sorting for itself.
+                var zones = new List<VehicleZone> {
+                    new VehicleZone { Id = 1, Name = "Default", Color = "#8899aa", IsDefault = true },
+                    new VehicleZone { Id = 2, Name = "Mining north", Color = "#c04a2b", IsDefault = false },
+                    new VehicleZone { Id = 3, Name = "Smelter \"hot\" yard — ünïcode", Color = "#2b7cc0", IsDefault = false },
+                };
+
                 // Built through the real VehicleTally rather than as a literal, so the
-                // aggregation, the kind+proto keying and the sort are what get tested.
+                // aggregation, the kind+zone+proto keying and the sort are what get tested.
                 // Trucks are added out of count order and in two batches to prove both.
                 var tally = new VehicleTally();
-                for (int i = 0; i < 3; i++) tally.Add("TruckSmall", "Truck (Diesel)", VehicleKind.Truck, false);
-                for (int i = 0; i < 7; i++) tally.Add("TruckLarge", "Haul truck \"big\" — ünïcode", VehicleKind.Truck, false);
-                for (int i = 0; i < 2; i++) tally.Add("TruckSmall", "Truck (Diesel)", VehicleKind.Truck, false);
-                tally.Add("ExcavatorT1", "Excavator", VehicleKind.Excavator, false);
-                for (int i = 0; i < 4; i++) tally.Add("LocoDiesel", "Locomotive (Diesel)", VehicleKind.Locomotive, true);
-                for (int i = 0; i < 6; i++) tally.Add("WagonCargo", "Cargo wagon", VehicleKind.CargoWagon, true);
-                tally.Add("MysteryCraft", "Mystery craft", VehicleKind.Unknown, false);
-                tally.Add("RocketTransporterT1", "Rocket I", VehicleKind.RocketTransporter, false);
+                for (int i = 0; i < 3; i++) tally.Add("TruckSmall", "Truck (Diesel)", VehicleKind.Truck, false, 1);
+                for (int i = 0; i < 7; i++) tally.Add("TruckLarge", "Haul truck \"big\" — ünïcode", VehicleKind.Truck, false, 2);
+                for (int i = 0; i < 2; i++) tally.Add("TruckSmall", "Truck (Diesel)", VehicleKind.Truck, false, 1);
+                // The same prototype in a second zone. It must split into its own row and
+                // keep its name: the disambiguation net counts prototypes, not rows, so a
+                // fleet spread over three zones must not sprout three "(TruckLarge)" labels.
+                for (int i = 0; i < 4; i++) tally.Add("TruckLarge", "Haul truck \"big\" — ünïcode", VehicleKind.Truck, false, 3);
+                tally.Add("ExcavatorT1", "Excavator", VehicleKind.Excavator, false, 2);
+                // Train cars have no zone in the game at all.
+                for (int i = 0; i < 4; i++) tally.Add("LocoDiesel", "Locomotive (Diesel)", VehicleKind.Locomotive, true, VehicleTally.NoZone);
+                for (int i = 0; i < 6; i++) tally.Add("WagonCargo", "Cargo wagon", VehicleKind.CargoWagon, true, VehicleTally.NoZone);
+                tally.Add("MysteryCraft", "Mystery craft", VehicleKind.Unknown, false, 1);
+                tally.Add("RocketTransporterT1", "Rocket I", VehicleKind.RocketTransporter, false, 1);
                 // Two prototypes the exporter could not tell apart by name or fuel: the
                 // disambiguation net must fall back to the ids rather than emit one label twice.
-                for (int i = 0; i < 8; i++) tally.Add("DozerA", "Bulldozer", VehicleKind.Unknown, false);
-                for (int i = 0; i < 5; i++) tally.Add("DozerB", "Bulldozer", VehicleKind.Unknown, false);
+                for (int i = 0; i < 8; i++) tally.Add("DozerA", "Bulldozer", VehicleKind.Unknown, false, 1);
+                for (int i = 0; i < 5; i++) tally.Add("DozerB", "Bulldozer", VehicleKind.Unknown, false, 1);
 
                 var manifest = new Manifest {
                     SchemaVersion = CoiMapSchema.SchemaVersion,
@@ -217,7 +230,7 @@ namespace CoiMapper.SchemaCheck {
                     Surfaces = surfaces.ToArray(),
                     TileSurfaces = tileSurfaces.ToArray(),
                     Deposits = deposits.ToArray(),
-                    Vehicles = tally.ToCensus(trains: 2, limit: 40, limitLeft: 27),
+                    Vehicles = tally.ToCensus(zones, trains: 2, limit: 40, limitLeft: 27),
                     Counts = new Counts { Entities = entities.Count, Transports = 1, Edges = 1, Protos = entities.Count },
                 };
                 archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);

@@ -61,15 +61,53 @@ check('vehicle census is marked exported', fleet.exported === true, fleet.export
 // A brand-new enum: the case the "enums encoded as names" check above exists for.
 const kinds = fleet.types.map((v) => v.kind).join(',');
 check('vehicle kinds encoded as names',
-  kinds === 'Unknown,Unknown,Unknown,Truck,Truck,Excavator,Locomotive,CargoWagon,RocketTransporter',
+  kinds === 'Unknown,Unknown,Unknown,Truck,Truck,Truck,Excavator,Locomotive,CargoWagon,RocketTransporter',
   kinds);
 
-// Rows must arrive grouped by kind ordinal, then count descending — the UI renders them
-// in file order rather than re-sorting, so a lost sort would show up as a jumbled panel.
+// Rows must arrive grouped by kind ordinal, then zone, then count descending — the panel
+// leans on this order, so a lost sort would show up as a jumbled list.
 const order = fleet.types.map((v) => `${v.proto}:${v.count}`).join(' ');
-check('census rows keep kind-then-count order',
-  order === 'DozerA:8 DozerB:5 MysteryCraft:1 TruckLarge:7 TruckSmall:5 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6 RocketTransporterT1:1',
+check('census rows keep kind-then-zone-then-count order',
+  order === 'DozerA:8 DozerB:5 MysteryCraft:1 TruckSmall:5 TruckLarge:7 TruckLarge:4 ExcavatorT1:1 LocoDiesel:4 WagonCargo:6 RocketTransporterT1:1',
   order);
+
+// ── logistics zones ──────────────────────────────────────────────────────────
+// The zone table is what VehicleCount.zone points into, and its order is the order the
+// panel groups in — the default zone first.
+const zoneOrder = fleet.zones.map((z) => `${z.id}:${z.name}`).join(' ');
+check('zone table survives in writer order',
+  zoneOrder === '1:Default 2:Mining north 3:Smelter "hot" yard — ünïcode', zoneOrder);
+check('exactly one zone is marked default',
+  fleet.zones.filter((z) => z.isDefault).length === 1 && fleet.zones[0].isDefault === true,
+  fleet.zones.filter((z) => z.isDefault).map((z) => z.name).join(','));
+check('zone colours survive as #rrggbb',
+  fleet.zones.every((z) => /^#[0-9a-f]{6}$/.test(z.color)),
+  fleet.zones.map((z) => z.color).join(' '));
+
+// Every row either points at a real zone or says it has none. A row pointing at a zone
+// that is not in the table would render under a group the panel had to invent.
+const zoneIds = new Set(fleet.zones.map((z) => z.id));
+const dangling = fleet.types.filter((v) => v.zone !== -1 && !zoneIds.has(v.zone));
+check('every row resolves to a zone or to none', dangling.length === 0,
+  dangling.map((v) => `${v.proto}->${v.zone}`).join(' '));
+
+// Train cars have no zone in the game; road vehicles always have one.
+const rail = fleet.types.filter((v) => v.kind === 'Locomotive' || v.kind === 'CargoWagon');
+const road = fleet.types.filter((v) => v.kind !== 'Locomotive' && v.kind !== 'CargoWagon');
+check('train cars carry no zone', rail.every((v) => v.zone === -1),
+  rail.map((v) => `${v.proto}:${v.zone}`).join(' '));
+check('road vehicles all carry a zone', road.every((v) => v.zone !== -1),
+  road.map((v) => `${v.proto}:${v.zone}`).join(' '));
+
+// One prototype spread across two zones: two rows in the file, one row once the panel
+// totals by kind. This is the grain the format is stored at.
+const large = fleet.types.filter((v) => v.proto === 'TruckLarge');
+check('one prototype splits into a row per zone',
+  large.length === 2 && large.map((v) => `${v.zone}:${v.count}`).join(' ') === '2:7 3:4',
+  large.map((v) => `${v.zone}:${v.count}`).join(' '));
+check('a split prototype keeps one label',
+  new Set(large.map((v) => v.name)).size === 1 && large[0].name === 'Haul truck "big" — ünïcode',
+  large.map((v) => v.name).join(' / '));
 
 // The panel hides rocket transporters, but the file must still carry them: the point of
 // hiding a kind in the UI is that the data stays available to anything that wants it.
@@ -83,12 +121,15 @@ const dozers = fleet.types.filter((v) => v.name.startsWith('Bulldozer')).map((v)
 check('colliding names fall back to the prototype id',
   dozers.join(' / ') === 'Bulldozer (DozerA) / Bulldozer (DozerB)', dozers.join(' / '));
 
-// Every label in the panel must be distinct, however it got that way.
-const names = fleet.types.map((v) => v.name);
-check('every census row has a unique label', new Set(names).size === names.length,
-  `${new Set(names).size} distinct of ${names.length}`);
+// Every prototype in the panel must be distinct, however it got that way. Rows are no
+// longer unique by name — one prototype has a row per zone — so this asks the question
+// that still matters: two different prototypes must never share a label.
+const byProto = new Map(fleet.types.map((v) => [v.proto, v.name]));
+check('distinct prototypes have distinct labels',
+  new Set(byProto.values()).size === byProto.size,
+  `${new Set(byProto.values()).size} distinct of ${byProto.size}`);
 
-// TruckSmall was added in two separate batches of 3 and 2.
+// TruckSmall was added in two separate batches of 3 and 2, both in the same zone.
 const small = fleet.types.find((v) => v.proto === 'TruckSmall');
 check('repeated prototypes aggregate into one row', small?.count === 5, small?.count);
 
@@ -96,11 +137,9 @@ const fleetName = fleet.types.find((v) => v.proto === 'TruckLarge')?.name;
 check('vehicle names escape correctly', fleetName === 'Haul truck "big" — ünïcode', JSON.stringify(fleetName));
 
 // Totals are accumulated separately from the rows, so they can drift apart.
-const roadRows = fleet.types.filter((v) => v.kind !== 'Locomotive' && v.kind !== 'CargoWagon');
-const railRows = fleet.types.filter((v) => v.kind === 'Locomotive' || v.kind === 'CargoWagon');
 const sum = (rows: typeof fleet.types) => rows.reduce((n, v) => n + v.count, 0);
 check('census totals match the rows they came from',
-  fleet.vehicles === sum(roadRows) && fleet.trainCars === sum(railRows),
+  fleet.vehicles === sum(road) && fleet.trainCars === sum(rail),
   `${fleet.vehicles} road / ${fleet.trainCars} rail`);
 check('train and quota figures survive',
   fleet.trains === 2 && fleet.limit === 40 && fleet.limitLeft === 27,

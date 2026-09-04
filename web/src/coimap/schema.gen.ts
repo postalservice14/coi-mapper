@@ -162,14 +162,29 @@ export interface VehicleCount {
   /** Display name, e.g. "Haul truck (dump) (Diesel)". The fuel variant is part of the game's own name. */
   name: string;
   kind: VehicleKind;
+  /** Key into VehicleCensus.zones, or -1 for a machine that has no zone. Every road vehicle belongs to exactly one logistics zone — the default zone if the player never moved it — so -1 means train cars, which the game gives no zone at all, or an export whose zone manager would not resolve. */
+  zone: number;
   count: number;
+}
+
+export interface VehicleZone {
+  /** The game's own zone id; what VehicleCount.zone refers to. */
+  id: number;
+  /** Display name. The player's own name where they set one, else the game's. */
+  name: string;
+  /** The zone's colour in game, as "#rrggbb". Used as a swatch, not a fill. */
+  color: string;
+  /** True for the one zone the game creates itself and the player cannot remove. */
+  isDefault: boolean;
 }
 
 export interface VehicleCensus {
   /** False when this export carries no census at all — either written by a mod build from before vehicles were exported, or the vehicle managers would not resolve. Distinct from a world that genuinely has none, which exports with an empty types list. */
   exported: boolean;
-  /** One row per prototype, ordered by kind (the VehicleKind declaration order), then count descending, then name. The exporter fixes the order so two exports of the same world agree byte for byte. */
+  /** One row per prototype *per zone* — the finest grain, so a panel can total it by kind or by zone without the format changing. Ordered by kind (the VehicleKind declaration order), then zone, then count descending, then name. The exporter fixes the order so two exports of the same world agree byte for byte. */
   types: VehicleCount[];
+  /** The zones VehicleCount.zone refers to, default zone first and then the order the game holds them in; the UI groups by this order rather than re-sorting, so the writer stays the one place that decides it. Empty means zone data was not exported — a mod build from before zones, or a zone manager that would not resolve — and never means "this world has no zones", because the game always has a default zone and a manager that resolved always yields at least one. That is why zones need no `exported` flag of their own, unlike the census. */
+  zones: VehicleZone[];
   /** Total road vehicles. */
   vehicles: number;
   /** Total locomotives and cargo wagons. */

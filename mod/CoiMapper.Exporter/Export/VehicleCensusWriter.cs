@@ -33,12 +33,18 @@ namespace CoiMapper.Export {
                 int trains = 0, limit = 0, limitLeft = 0;
                 bool anyManager = false;
 
+                // Zones are read first because the default zone's id is what a vehicle the
+                // player never moved reports as its own. Failing to read them costs the
+                // panel's zone grouping and nothing else, so it does not gate anyManager.
+                int defaultZoneId;
+                var zones = ReadZones(TryResolve<ILogisticsZonesManager>(resolver), out defaultZoneId);
+
                 var fleet = TryResolve<IVehiclesManager>(resolver);
                 if (fleet != null) {
                     anyManager = true;
                     limit = fleet.MaxVehiclesLimit;
                     limitLeft = fleet.VehiclesLimitLeft;
-                    TallyRoadVehicles(tally, fleet);
+                    TallyRoadVehicles(tally, fleet, defaultZoneId);
                 }
 
                 var railway = TryResolve<TrainsManager>(resolver);
@@ -47,10 +53,97 @@ namespace CoiMapper.Export {
                     trains = TallyTrains(tally, railway);
                 }
 
-                return anyManager ? tally.ToCensus(trains, limit, limitLeft) : VehicleTally.NotExported();
+                return anyManager ? tally.ToCensus(zones, trains, limit, limitLeft) : VehicleTally.NotExported();
             } catch (Exception e) {
                 Log.Error("CoiMapper: vehicle census skipped — " + e);
                 return VehicleTally.NotExported();
+            }
+        }
+
+        // ── logistics zones ───────────────────────────────────────────────────
+        /// <summary>
+        /// The player's zones: the default one the game always has, then the rest in the
+        /// game's own order. That order is what the panel groups by, so it is decided here
+        /// rather than in the UI.
+        ///
+        /// Returns an empty list, and <see cref="VehicleTally.NoZone"/> as the default id, if
+        /// the zones cannot be read at all. The two travel together deliberately — a census
+        /// with a zone table but no known default id would file every unmoved vehicle under a
+        /// zone that is not in the table, which is worse than exporting no zones at all.
+        /// </summary>
+        private static List<VehicleZone> ReadZones(ILogisticsZonesManager manager, out int defaultZoneId) {
+            var rows = new List<VehicleZone>();
+            defaultZoneId = VehicleTally.NoZone;
+            if (manager == null) return rows;
+
+            try {
+                var fallback = manager.DefaultZone;
+                if (fallback != null) {
+                    defaultZoneId = fallback.Id.Value;
+                    rows.Add(RowFor(fallback));
+                }
+
+                // As with the trains walk, IIndexable is Mafi's own type and needs the bridge.
+                foreach (var zone in manager.AllZones.AsEnumerable()) {
+                    if (zone == null || zone.IsDestroyed) continue;
+                    if (zone.Id.Value == defaultZoneId) continue;
+                    rows.Add(RowFor(zone));
+                }
+            } catch (Exception e) {
+                Log.Error("CoiMapper: logistics zones skipped — " + e);
+                rows.Clear();
+                defaultZoneId = VehicleTally.NoZone;
+            }
+
+            // Holds the pairing above: no known default means no usable zone table.
+            if (defaultZoneId == VehicleTally.NoZone) rows.Clear();
+            return rows;
+        }
+
+        private static VehicleZone RowFor(LogisticsZone zone) {
+            return new VehicleZone {
+                Id = zone.Id.Value,
+                Name = ZoneName(zone),
+                Color = ZoneColor(zone),
+                IsDefault = zone.IsDefaultZone,
+            };
+        }
+
+        /// <summary>
+        /// The zone's name as the game shows it, which already resolves to the player's own
+        /// name where they set one. Falls back to the id so a zone with no name at all still
+        /// reads as something rather than as a blank heading.
+        /// </summary>
+        private static string ZoneName(LogisticsZone zone) {
+            try {
+                string name = zone.Name.Value;
+                if (!string.IsNullOrEmpty(name)) return name;
+            } catch (Exception) {
+                // A zone with no string is not worth failing the census for.
+            }
+            return "Zone " + zone.Id.Value;
+        }
+
+        private static string ZoneColor(LogisticsZone zone) {
+            try {
+                var rgba = zone.Color;
+                return "#" + rgba.R.ToString("x2") + rgba.G.ToString("x2") + rgba.B.ToString("x2");
+            } catch (Exception) {
+                return "#8899aa";
+            }
+        }
+
+        /// <summary>
+        /// The zone a road vehicle belongs to. Every vehicle belongs to one; the option is
+        /// empty for a vehicle the player never moved out of the default zone, which is why
+        /// this resolves to the default id rather than to "none".
+        /// </summary>
+        private static int ZoneOf(Vehicle vehicle, int defaultZoneId) {
+            try {
+                var zone = vehicle.AssignedZone;
+                return zone.HasValue ? zone.Value.Id.Value : defaultZoneId;
+            } catch (Exception) {
+                return VehicleTally.NoZone;
             }
         }
 
@@ -70,15 +163,18 @@ namespace CoiMapper.Export {
         /// later, or one a mod introduces, is still counted — under Unknown — rather than
         /// silently vanishing from the total.
         /// </summary>
-        private static void TallyRoadVehicles(VehicleTally tally, IVehiclesManager fleet) {
+        private static void TallyRoadVehicles(VehicleTally tally, IVehiclesManager fleet, int defaultZoneId) {
             var seen = new HashSet<object>();
-            Tally(tally, seen, fleet.Trucks, VehicleKind.Truck, false, v => v.Prototype);
-            Tally(tally, seen, fleet.Excavators, VehicleKind.Excavator, false, v => v.Prototype);
-            Tally(tally, seen, fleet.TreeHarvesters, VehicleKind.TreeHarvester, false, v => v.Prototype);
-            Tally(tally, seen, fleet.TreePlanters, VehicleKind.TreePlanter, false, v => v.Prototype);
+            // Every one of these sets holds a Vehicle subclass, so one selector covers them
+            // all; Func is contravariant in its argument, which is what lets it be reused.
+            Func<Vehicle, int> zoneOf = v => ZoneOf(v, defaultZoneId);
+            Tally(tally, seen, fleet.Trucks, VehicleKind.Truck, false, v => v.Prototype, zoneOf);
+            Tally(tally, seen, fleet.Excavators, VehicleKind.Excavator, false, v => v.Prototype, zoneOf);
+            Tally(tally, seen, fleet.TreeHarvesters, VehicleKind.TreeHarvester, false, v => v.Prototype, zoneOf);
+            Tally(tally, seen, fleet.TreePlanters, VehicleKind.TreePlanter, false, v => v.Prototype, zoneOf);
             Tally(tally, seen, fleet.AllVehicles.OfType<RocketTransporter>(),
-                VehicleKind.RocketTransporter, false, v => v.Prototype);
-            Tally(tally, seen, fleet.AllVehicles, VehicleKind.Unknown, false, v => v.Prototype);
+                VehicleKind.RocketTransporter, false, v => v.Prototype, zoneOf);
+            Tally(tally, seen, fleet.AllVehicles, VehicleKind.Unknown, false, v => v.Prototype, zoneOf);
         }
 
         // ── trains ────────────────────────────────────────────────────────────
@@ -105,10 +201,13 @@ namespace CoiMapper.Export {
                 trains++;
 
                 var seen = new HashSet<object>();
-                Tally(tally, seen, train.Locomotives.AsEnumerable(), VehicleKind.Locomotive, true, c => c.Prototype);
-                Tally(tally, seen, train.CargoWagons.AsEnumerable(), VehicleKind.CargoWagon, true, c => c.Prototype);
+                // Rolling stock has no zone: logistics zones are a road-fleet concept and
+                // TrainCarBase carries nothing equivalent.
+                Func<TrainCarBase, int> noZone = c => VehicleTally.NoZone;
+                Tally(tally, seen, train.Locomotives.AsEnumerable(), VehicleKind.Locomotive, true, c => c.Prototype, noZone);
+                Tally(tally, seen, train.CargoWagons.AsEnumerable(), VehicleKind.CargoWagon, true, c => c.Prototype, noZone);
                 // As with AllVehicles: catch any car that is neither, rather than lose it.
-                Tally(tally, seen, train.TrainCars.AsEnumerable(), VehicleKind.Unknown, true, c => c.Prototype);
+                Tally(tally, seen, train.TrainCars.AsEnumerable(), VehicleKind.Unknown, true, c => c.Prototype, noZone);
             }
 
             return trains;
@@ -130,14 +229,15 @@ namespace CoiMapper.Export {
             IEnumerable<T> items,
             VehicleKind kind,
             bool isTrainCar,
-            Func<T, DynamicEntityProto> protoOf) where T : class {
+            Func<T, DynamicEntityProto> protoOf,
+            Func<T, int> zoneOf) where T : class {
             if (items == null) return;
 
             foreach (var item in items) {
                 if (item == null || !seen.Add(item)) continue;
                 var proto = protoOf(item);
                 if (proto == null) continue;
-                tally.Add(proto.Id.Value, NameOf(proto), kind, isTrainCar);
+                tally.Add(proto.Id.Value, NameOf(proto), kind, isTrainCar, zoneOf(item));
             }
         }
 

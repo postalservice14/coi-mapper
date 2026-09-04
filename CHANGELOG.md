@@ -27,12 +27,23 @@ misrendering them.
   also shows the vehicle quota, which is the one figure that can be checked against the
   game's own screen.
 
-  Counts only — no positions — so this does not put vehicles on the map, which would need a
-  further format change.
+  The panel also groups by **logistics zone**, the way the game partitions the road fleet.
+  A "Group by: Kind / Zone" switch in the header repivots the same list, so a zone that is
+  short of haul trucks is one click away rather than something to work out from the game's
+  own screens. The census stores one row per prototype *per zone* — the finest grain there
+  is — and each view totals up from it, which is why the switch changes no numbers: the same
+  fleet, cut two ways. Zones carry the colour and name the player gave them in game. Train
+  cars have no zone at all — logistics zones are a road-fleet concept — so they collect into
+  a trailing "Trains" section instead of being forced into one. The switch appears only where
+  there is more than one zone to separate.
 
-  The schema version is deliberately **not** bumped. The census is a new manifest field, and
-  an added field is not a breaking change: exports written before it still load and report
-  the fleet as not counted. Bumping would have made every existing export unreadable to gain
+  Counts only — no positions — so this does not put vehicles on the map, which would need a
+  further format change. Zones are exported as identity only, not as the map areas they
+  actually are; drawing them would need the zone polygon.
+
+  The schema version is deliberately **not** bumped, for the census or for the zones added
+  to it. Both are added fields, and an added field is not a breaking change: exports written
+  before them still load, reporting the fleet as not counted and offering no zone grouping. Bumping would have made every existing export unreadable to gain
   nothing. That "not counted" state is an explicit flag rather than an empty list, because an
   empty list is a real answer for a world with no vehicles.
 
@@ -46,7 +57,10 @@ misrendering them.
 
   Like the deposit, designation and paving layers, this is compile-verified against the real
   game assemblies and covered by the cross-language contract test, but has **not yet been run
-  in the game** — that is still the real check.
+  in the game** — that is still the real check. The zone read adds one more manager to that
+  list: a vehicle whose zone the game reports as unset is filed under the default zone, which
+  is what the game means by it, and failing to resolve the zones manager costs the grouping
+  and nothing else.
 
 - **A "Surfaces" layer for player-placed paving** — concrete, brick, metal flooring — in a new
   optional `tileSurface` plane with its own legend. This is a genuinely new read: the existing

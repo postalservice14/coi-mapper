@@ -13,6 +13,15 @@ const json = <T>(bytes: Uint8Array): T => JSON.parse(decoder.decode(bytes)) as T
 export class CoiMapError extends Error {}
 
 /**
+ * The value `VehicleCount.zone` carries for a machine the game gives no zone at all.
+ *
+ * Train cars always, since logistics zones are a road-fleet concept; road vehicles only in
+ * an export whose zone manager could not be read, which also leaves the zone table empty.
+ * Mirrors `VehicleTally.NoZone` on the exporter side.
+ */
+export const NO_ZONE = -1;
+
+/**
  * Views a plane's bytes as its declared type.
  *
  * fflate hands back a `Uint8Array` that may sit at any byte offset in a larger buffer,
@@ -77,8 +86,17 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
   // change, and bumping would make every existing export unreadable to gain nothing.
   if (!manifest.vehicles) {
     manifest.vehicles = {
-      exported: false, types: [], vehicles: 0, trainCars: 0, trains: 0, limit: 0, limitLeft: 0,
+      exported: false, types: [], zones: [], vehicles: 0, trainCars: 0, trains: 0, limit: 0, limitLeft: 0,
     };
+  }
+
+  // Zones arrived after the census did, so an export can carry rows with no zone on them.
+  // An empty zone table is the file's own way of saying "not exported" — the game always
+  // has a default zone, so a census that read zones at all has at least one — and -1 is
+  // what a row with no zone means, which is exactly right for these older rows.
+  if (!manifest.vehicles.zones) manifest.vehicles.zones = [];
+  for (const row of manifest.vehicles.types) {
+    if (typeof row.zone !== 'number') row.zone = NO_ZONE;
   }
 
   const { width, height } = manifest.map;

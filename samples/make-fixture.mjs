@@ -86,23 +86,42 @@ const DEPOSITS = [
 ];
 
 /**
+ * The player's logistics zones, default first, as the exporter writes them. Three of them
+ * so the panel's zone grouping has something to separate: with one zone it hides the
+ * toggle entirely, which would leave that path untested.
+ */
+const ZONES = [
+  { id: 1, name: 'Default',      color: '#8899aa', isDefault: true },
+  { id: 2, name: 'Mining north', color: '#c0682b', isDefault: false },
+  { id: 3, name: 'Smelter yard', color: '#2b7cc0', isDefault: false },
+];
+
+/** Train cars have no zone in the game; see VehicleCount.zone in the schema. */
+const NO_ZONE = -1;
+
+/**
  * A synthetic fleet, in the order and shape the real exporter emits: grouped by
- * VehicleKind's declaration order, then by count descending. The totals below are derived
- * from these rows rather than written by hand, so the fixture cannot drift out of step
- * with itself and the smoke test can assert the header exactly.
+ * VehicleKind's declaration order, then by zone, then by count descending. The totals
+ * below are derived from these rows rather than written by hand, so the fixture cannot
+ * drift out of step with itself and the smoke test can assert the header exactly.
+ *
+ * The diesel haul truck is deliberately split across two zones. It is the case the panel's
+ * two pivots disagree about — one row per zone here, one merged row once the list is
+ * grouped by kind — so a fixture without it would exercise neither.
  */
 const VEHICLES = [
-  { proto: 'TruckT3Loose',   name: 'Haul truck (dump) (Diesel)',   kind: 'Truck',     count: 97 },
-  { proto: 'TruckT3LooseH',  name: 'Haul truck (dump) (Hydrogen)', kind: 'Truck',     count: 79 },
-  { proto: 'TruckT2',        name: 'Truck (Diesel)',               kind: 'Truck',     count: 12 },
-  { proto: 'ExcavatorT3',    name: 'Mega excavator (Diesel)',      kind: 'Excavator', count: 14 },
-  { proto: 'ExcavatorT3H',   name: 'Mega excavator (Hydrogen)',    kind: 'Excavator', count: 3 },
-  { proto: 'TreeHarvesterT1', name: 'Tree harvester',            kind: 'TreeHarvester', count: 6 },
-  { proto: 'TreePlanterT1',  name: 'Tree planter',               kind: 'TreePlanter',  count: 4 },
-  { proto: 'LocomotiveT1',   name: 'Locomotive (Diesel)',        kind: 'Locomotive',   count: 11 },
-  { proto: 'CargoWagonT1',   name: 'Cargo wagon',                kind: 'CargoWagon',   count: 38 },
+  { proto: 'TruckT2',        name: 'Truck (Diesel)',               kind: 'Truck',     zone: 1, count: 12 },
+  { proto: 'TruckT3LooseH',  name: 'Haul truck (dump) (Hydrogen)', kind: 'Truck',     zone: 2, count: 79 },
+  { proto: 'TruckT3Loose',   name: 'Haul truck (dump) (Diesel)',   kind: 'Truck',     zone: 2, count: 60 },
+  { proto: 'TruckT3Loose',   name: 'Haul truck (dump) (Diesel)',   kind: 'Truck',     zone: 3, count: 37 },
+  { proto: 'ExcavatorT3',    name: 'Mega excavator (Diesel)',      kind: 'Excavator', zone: 2, count: 14 },
+  { proto: 'ExcavatorT3H',   name: 'Mega excavator (Hydrogen)',    kind: 'Excavator', zone: 2, count: 3 },
+  { proto: 'TreeHarvesterT1', name: 'Tree harvester',            kind: 'TreeHarvester', zone: 1, count: 6 },
+  { proto: 'TreePlanterT1',  name: 'Tree planter',               kind: 'TreePlanter',  zone: 1, count: 4 },
+  { proto: 'LocomotiveT1',   name: 'Locomotive (Diesel)',        kind: 'Locomotive',   zone: NO_ZONE, count: 11 },
+  { proto: 'CargoWagonT1',   name: 'Cargo wagon',                kind: 'CargoWagon',   zone: NO_ZONE, count: 38 },
   // Exported but hidden by the panel; here so the fixture exercises that path.
-  { proto: 'RocketTransporterT1', name: 'Rocket I',              kind: 'RocketTransporter', count: 1 },
+  { proto: 'RocketTransporterT1', name: 'Rocket I',              kind: 'RocketTransporter', zone: 1, count: 1 },
 ];
 
 // The census counts everything the world holds, including kinds the panel hides.
@@ -113,6 +132,7 @@ const sumWhere = (rail) =>
 const VEHICLE_CENSUS = {
   exported: true,
   types: VEHICLES,
+  zones: ZONES,
   vehicles: sumWhere(false),
   trainCars: sumWhere(true),
   trains: 9,
