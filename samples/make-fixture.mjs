@@ -90,11 +90,25 @@ const DEPOSITS = [
  * so the panel's zone grouping has something to separate: with one zone it hides the
  * toggle entirely, which would leave that path untested.
  */
-const ZONES = [
-  { id: 1, name: 'Default',      color: '#8899aa', isDefault: true },
-  { id: 2, name: 'Mining north', color: '#c0682b', isDefault: false },
-  { id: 3, name: 'Smelter yard', color: '#2b7cc0', isDefault: false },
+// Areas depend on the map size, which is a command-line option, so this is a function
+// rather than a constant. The vehicle rows below refer to these zones by id.
+const zonesFor = (size) => [
+  // The default zone covers the whole map, which is the shape most likely to look wrong on
+  // screen: if the wash is too heavy or the outline too thick, this is the zone that shows
+  // it. Whether the game's own default zone is really map-sized is unknown until the first
+  // in-game export — assuming it is, is the conservative way round.
+  { id: 1, name: 'Default', color: '#8899aa', isDefault: true,
+    area: [0, 0, size - 1, 0, size - 1, size - 1, 0, size - 1] },
+  // Non-convex on purpose: an L cannot be mistaken for its own bounding box, so a dropped
+  // vertex or a ring closed early is visible rather than plausible.
+  { id: 2, name: 'Mining north', color: '#c0682b', isDefault: false,
+    area: scalePoly([40, 300, 200, 300, 200, 400, 120, 400, 120, 470, 40, 470], size) },
+  { id: 3, name: 'Smelter yard', color: '#2b7cc0', isDefault: false,
+    area: scalePoly([260, 120, 430, 120, 430, 260, 260, 260], size) },
 ];
+
+/** Rescales a polygon authored against a 512-tile map onto whatever size was asked for. */
+const scalePoly = (pts, size) => pts.map((v) => Math.round((v * size) / 512));
 
 /** Train cars have no zone in the game; see VehicleCount.zone in the schema. */
 const NO_ZONE = -1;
@@ -132,7 +146,6 @@ const sumWhere = (rail) =>
 const VEHICLE_CENSUS = {
   exported: true,
   types: VEHICLES,
-  zones: ZONES,
   vehicles: sumWhere(false),
   trainCars: sumWhere(true),
   trains: 9,
@@ -564,6 +577,7 @@ const manifest = {
   tileSurfaces: TILE_SURFACES,
   deposits: DEPOSITS,
   vehicles: VEHICLE_CENSUS,
+  zones: zonesFor(size),
   counts: {
     entities: world.entities.length,
     transports: world.transports.length,

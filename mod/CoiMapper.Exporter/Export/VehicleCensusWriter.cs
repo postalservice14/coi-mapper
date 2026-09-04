@@ -27,17 +27,17 @@ namespace CoiMapper.Export {
     /// the panel is titled to make their absence read as scope rather than as a bug.
     /// </summary>
     internal static class VehicleCensusWriter {
-        public static VehicleCensus Build(DependencyResolver resolver) {
+        /// <summary>
+        /// <paramref name="defaultZoneId"/> comes from <see cref="ZonesWriter"/>: it is the
+        /// zone a vehicle the player never moved belongs to, and <see cref="VehicleTally.NoZone"/>
+        /// when the zones could not be read at all — in which case the manifest carries no
+        /// zone table either, and nothing groups by zone.
+        /// </summary>
+        public static VehicleCensus Build(DependencyResolver resolver, int defaultZoneId) {
             try {
                 var tally = new VehicleTally();
                 int trains = 0, limit = 0, limitLeft = 0;
                 bool anyManager = false;
-
-                // Zones are read first because the default zone's id is what a vehicle the
-                // player never moved reports as its own. Failing to read them costs the
-                // panel's zone grouping and nothing else, so it does not gate anyManager.
-                int defaultZoneId;
-                var zones = ReadZones(TryResolve<ILogisticsZonesManager>(resolver), out defaultZoneId);
 
                 var fleet = TryResolve<IVehiclesManager>(resolver);
                 if (fleet != null) {
@@ -53,7 +53,7 @@ namespace CoiMapper.Export {
                     trains = TallyTrains(tally, railway);
                 }
 
-                return anyManager ? tally.ToCensus(zones, trains, limit, limitLeft) : VehicleTally.NotExported();
+                return anyManager ? tally.ToCensus(trains, limit, limitLeft) : VehicleTally.NotExported();
             } catch (Exception e) {
                 Log.Error("CoiMapper: vehicle census skipped — " + e);
                 return VehicleTally.NotExported();
@@ -61,78 +61,6 @@ namespace CoiMapper.Export {
         }
 
         // ── logistics zones ───────────────────────────────────────────────────
-        /// <summary>
-        /// The player's zones: the default one the game always has, then the rest in the
-        /// game's own order. That order is what the panel groups by, so it is decided here
-        /// rather than in the UI.
-        ///
-        /// Returns an empty list, and <see cref="VehicleTally.NoZone"/> as the default id, if
-        /// the zones cannot be read at all. The two travel together deliberately — a census
-        /// with a zone table but no known default id would file every unmoved vehicle under a
-        /// zone that is not in the table, which is worse than exporting no zones at all.
-        /// </summary>
-        private static List<VehicleZone> ReadZones(ILogisticsZonesManager manager, out int defaultZoneId) {
-            var rows = new List<VehicleZone>();
-            defaultZoneId = VehicleTally.NoZone;
-            if (manager == null) return rows;
-
-            try {
-                var fallback = manager.DefaultZone;
-                if (fallback != null) {
-                    defaultZoneId = fallback.Id.Value;
-                    rows.Add(RowFor(fallback));
-                }
-
-                // As with the trains walk, IIndexable is Mafi's own type and needs the bridge.
-                foreach (var zone in manager.AllZones.AsEnumerable()) {
-                    if (zone == null || zone.IsDestroyed) continue;
-                    if (zone.Id.Value == defaultZoneId) continue;
-                    rows.Add(RowFor(zone));
-                }
-            } catch (Exception e) {
-                Log.Error("CoiMapper: logistics zones skipped — " + e);
-                rows.Clear();
-                defaultZoneId = VehicleTally.NoZone;
-            }
-
-            // Holds the pairing above: no known default means no usable zone table.
-            if (defaultZoneId == VehicleTally.NoZone) rows.Clear();
-            return rows;
-        }
-
-        private static VehicleZone RowFor(LogisticsZone zone) {
-            return new VehicleZone {
-                Id = zone.Id.Value,
-                Name = ZoneName(zone),
-                Color = ZoneColor(zone),
-                IsDefault = zone.IsDefaultZone,
-            };
-        }
-
-        /// <summary>
-        /// The zone's name as the game shows it, which already resolves to the player's own
-        /// name where they set one. Falls back to the id so a zone with no name at all still
-        /// reads as something rather than as a blank heading.
-        /// </summary>
-        private static string ZoneName(LogisticsZone zone) {
-            try {
-                string name = zone.Name.Value;
-                if (!string.IsNullOrEmpty(name)) return name;
-            } catch (Exception) {
-                // A zone with no string is not worth failing the census for.
-            }
-            return "Zone " + zone.Id.Value;
-        }
-
-        private static string ZoneColor(LogisticsZone zone) {
-            try {
-                var rgba = zone.Color;
-                return "#" + rgba.R.ToString("x2") + rgba.G.ToString("x2") + rgba.B.ToString("x2");
-            } catch (Exception) {
-                return "#8899aa";
-            }
-        }
-
         /// <summary>
         /// The zone a road vehicle belongs to. Every vehicle belongs to one; the option is
         /// empty for a vehicle the player never moved out of the default zone, which is why

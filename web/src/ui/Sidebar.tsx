@@ -25,6 +25,9 @@ const LAYERS: LayerRow[] = [
   { name: 'entities', label: 'Buildings', hint: 'Placed machines and structures' },
   { name: 'transports', label: 'Conveyors & pipes', hint: 'Logistics runs', needs: (d) => d.transports.length > 0 },
   { name: 'power', label: 'Power grid', hint: 'Electricity and shaft connections', needs: (d) => d.edges.length > 0 },
+  // A zone the player never drew an area for has nothing to draw, so availability turns on
+  // the polygons rather than on the table: a table of arealess zones is not a layer.
+  { name: 'zones', label: 'Logistics zones', hint: 'Areas the player drew to partition the vehicle fleet', needs: (d) => d.manifest.zones.some((z) => z.area.length > 0) },
   { name: 'grid', label: 'Grid', hint: 'Tile grid, heavy lines every 16 tiles' },
 ];
 
@@ -132,6 +135,20 @@ export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
             {doc.manifest.deposits.map((d) => (
               <div key={d.id} className="legend-row">
                 <span className="swatch" style={{ background: d.color }} /> {d.name}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* This is what names the zones: the map draws their colours but no text, so the
+            legend is the only place a colour becomes a zone. Arealess zones are listed
+            too — they are real zones, just not drawn ones. */}
+        {doc.manifest.zones.length > 0 && (
+          <div className="legend-group">
+            <h4>Logistics zones</h4>
+            {doc.manifest.zones.map((z) => (
+              <div key={z.id} className="legend-row">
+                <span className="swatch" style={{ background: z.color }} /> {z.name}
+                {z.area.length === 0 && <span className="muted"> — no area</span>}
               </div>
             ))}
           </div>

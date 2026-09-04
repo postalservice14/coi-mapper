@@ -38,8 +38,7 @@ misrendering them.
   there is more than one zone to separate.
 
   Counts only — no positions — so this does not put vehicles on the map, which would need a
-  further format change. Zones are exported as identity only, not as the map areas they
-  actually are; drawing them would need the zone polygon.
+  further format change.
 
   The schema version is deliberately **not** bumped, for the census or for the zones added
   to it. Both are added fields, and an added field is not a breaking change: exports written
@@ -61,6 +60,25 @@ misrendering them.
   list: a vehicle whose zone the game reports as unset is filed under the default zone, which
   is what the game means by it, and failing to resolve the zones manager costs the grouping
   and nothing else.
+
+- **A "Logistics zones" map layer**, drawing the areas the player drew to partition the
+  vehicle fleet. Each zone is washed in its own in-game colour and drawn round its boundary,
+  and the sidebar legend names the colours — the map itself carries no text. It is off by
+  default, because it tints the terrain and that should be a deliberate act.
+
+  The zone polygon comes straight from the game (`LogisticsZone.Area.Polygon.Vertices`) as a
+  flattened ring of tile coordinates, the same encoding conveyor runs already use, so these
+  are the real boundaries rather than a per-tile approximation of them. The layer is a
+  vector `Graphics` like the conveyor and power overlays, not a baked raster, which is what
+  lets the outline redraw at a constant on-screen thickness instead of turning into a fat
+  band as you zoom in. It sits *under* the conveyor and power lines: an area wash painted
+  over a quarter-tile-wide conveyor is what makes one hard to follow.
+
+  The zone table moved from inside the vehicle census to the top of the manifest as part of
+  this. It had been a census detail because the census was the first thing to need it; two
+  consumers later, with the map drawing the same zones the panel groups by, it belongs to
+  neither. The exporter's zone reading moved to its own `Export/ZonesWriter.cs` for the same
+  reason.
 
 - **A "Surfaces" layer for player-placed paving** — concrete, brick, metal flooring — in a new
   optional `tileSurface` plane with its own legend. This is a genuinely new read: the existing

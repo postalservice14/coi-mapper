@@ -79,6 +79,18 @@ export const STRUCTS = {
     { name: 'tileSurfaces',  type: 'TileSurface[]', doc: 'Legend for the tileSurface plane. Absent in files written before that plane existed.' },
     { name: 'deposits',      type: 'Deposit[]',   doc: 'Legend for the deposit plane.' },
     { name: 'vehicles',      type: 'VehicleCensus', doc: 'The fleet, counted per prototype. Absent in files written before this existed.' },
+    {
+      name: 'zones',
+      type: 'Zone[]',
+      doc:
+        'The player\'s logistics zones: the map layer draws them, and VehicleCount.zone ' +
+        'refers to them. Default zone first, then the order the game holds them in; ' +
+        'consumers group in this order rather than re-sorting, so the writer stays the one ' +
+        'place that decides it. Empty means zone data was not exported — a file written ' +
+        'before zones existed, or a zone manager that would not resolve — and never means ' +
+        '"this world has no zones", because the game always has a default zone and a ' +
+        'manager that resolved always yields at least one.',
+    },
     { name: 'counts',        type: 'Counts' },
   ],
   GameInfo: [
@@ -139,7 +151,7 @@ export const STRUCTS = {
       name: 'zone',
       type: 'int',
       doc:
-        'Key into VehicleCensus.zones, or -1 for a machine that has no zone. Every road ' +
+        'Key into Manifest.zones, or -1 for a machine that has no zone. Every road ' +
         'vehicle belongs to exactly one logistics zone — the default zone if the player ' +
         'never moved it — so -1 means train cars, which the game gives no zone at all, or ' +
         'an export whose zone manager would not resolve.',
@@ -149,16 +161,26 @@ export const STRUCTS = {
   /**
    * One of the player's logistics zones.
    *
-   * Zones partition the road fleet: the game creates a default zone every world has, and
-   * the player may add named ones and drag vehicles between them. They are areas, not
-   * groups — `LogisticsZone.Area` is a polygon — but only the identity is exported here,
-   * which is all the vehicle panel needs. Drawing zones on the map would need the polygon.
+   * Zones are *areas* the player draws, which the game then uses to partition the road
+   * fleet: every world has a default zone, and the player may add named ones and drag
+   * vehicles between them. Both halves are exported — the polygon for the map layer, the
+   * identity for the vehicle panel — which is why this lives on the manifest rather than
+   * inside the census that first needed it.
    */
-  VehicleZone: [
+  Zone: [
     { name: 'id',        type: 'int',    doc: "The game's own zone id; what VehicleCount.zone refers to." },
     { name: 'name',      type: 'string', doc: 'Display name. The player\'s own name where they set one, else the game\'s.' },
-    { name: 'color',     type: 'string', doc: "The zone's colour in game, as \"#rrggbb\". Used as a swatch, not a fill." },
+    { name: 'color',     type: 'string', doc: "The zone's colour in game, as \"#rrggbb\". Used for both the swatch and the map fill." },
     { name: 'isDefault', type: 'bool',   doc: 'True for the one zone the game creates itself and the player cannot remove.' },
+    {
+      name: 'area',
+      type: 'int[]',
+      doc:
+        'The zone boundary as flattened tile coordinates, [x0,y0,x1,y1,...] — the same ' +
+        'encoding Transport.points uses. A closed ring: the last vertex joins the first, ' +
+        'and no vertex is repeated to say so. Empty when the zone has no polygon, which ' +
+        'draws nothing rather than a degenerate shape.',
+    },
   ],
   /**
    * Every mobile machine in the world, counted. Road vehicles and train cars only —
@@ -181,18 +203,6 @@ export const STRUCTS = {
         'kind or by zone without the format changing. Ordered by kind (the VehicleKind ' +
         'declaration order), then zone, then count descending, then name. The exporter ' +
         'fixes the order so two exports of the same world agree byte for byte.',
-    },
-    {
-      name: 'zones',
-      type: 'VehicleZone[]',
-      doc:
-        'The zones VehicleCount.zone refers to, default zone first and then the order the ' +
-        'game holds them in; the UI groups by this order rather than re-sorting, so the ' +
-        'writer stays the one place that decides it. Empty means zone data was not ' +
-        'exported — a mod build from before zones, or a zone manager that would not ' +
-        'resolve — and never means "this world has no zones", because the game always has ' +
-        'a default zone and a manager that resolved always yields at least one. That is ' +
-        'why zones need no `exported` flag of their own, unlike the census.',
     },
     { name: 'vehicles',  type: 'int', doc: 'Total road vehicles.' },
     { name: 'trainCars', type: 'int', doc: 'Total locomotives and cargo wagons.' },

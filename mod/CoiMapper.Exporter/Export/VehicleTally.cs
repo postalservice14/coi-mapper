@@ -67,11 +67,11 @@ namespace CoiMapper.Export {
         }
 
         /// <summary>
-        /// <paramref name="zones"/> is what every row's zone id points into, and its order is
-        /// the order the panel groups in. An empty list means zone data could not be read;
-        /// it never means the world has none, since the game always has a default zone.
+        /// The zone table every row's zone id points into is not here: it lives on the
+        /// manifest, written by <see cref="ZonesWriter"/>, because the map layer draws the
+        /// same zones the census counts by.
         /// </summary>
-        public VehicleCensus ToCensus(IEnumerable<VehicleZone> zones, int trains, int limit, int limitLeft) {
+        public VehicleCensus ToCensus(int trains, int limit, int limitLeft) {
             var rows = new List<VehicleCount>(m_rows.Values);
             // Dictionary iteration order is unspecified, so without an explicit sort two
             // exports of the same unchanged world would differ byte for byte.
@@ -81,7 +81,6 @@ namespace CoiMapper.Export {
             return new VehicleCensus {
                 Exported = true,
                 Types = rows.ToArray(),
-                Zones = zones == null ? new VehicleZone[0] : new List<VehicleZone>(zones).ToArray(),
                 Vehicles = m_vehicles,
                 TrainCars = m_trainCars,
                 Trains = trains,
@@ -149,11 +148,7 @@ namespace CoiMapper.Export {
         /// here rather than on the type itself.
         /// </summary>
         public static VehicleCensus NotExported() {
-            return new VehicleCensus {
-                Exported = false,
-                Types = new VehicleCount[0],
-                Zones = new VehicleZone[0],
-            };
+            return new VehicleCensus { Exported = false, Types = new VehicleCount[0] };
         }
     }
 }

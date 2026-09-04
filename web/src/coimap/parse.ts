@@ -86,15 +86,15 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
   // change, and bumping would make every existing export unreadable to gain nothing.
   if (!manifest.vehicles) {
     manifest.vehicles = {
-      exported: false, types: [], zones: [], vehicles: 0, trainCars: 0, trains: 0, limit: 0, limitLeft: 0,
+      exported: false, types: [], vehicles: 0, trainCars: 0, trains: 0, limit: 0, limitLeft: 0,
     };
   }
 
   // Zones arrived after the census did, so an export can carry rows with no zone on them.
   // An empty zone table is the file's own way of saying "not exported" — the game always
-  // has a default zone, so a census that read zones at all has at least one — and -1 is
+  // has a default zone, so an export that read zones at all has at least one — and -1 is
   // what a row with no zone means, which is exactly right for these older rows.
-  if (!manifest.vehicles.zones) manifest.vehicles.zones = [];
+  if (!manifest.zones) manifest.zones = [];
   for (const row of manifest.vehicles.types) {
     if (typeof row.zone !== 'number') row.zone = NO_ZONE;
   }

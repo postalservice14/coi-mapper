@@ -85,6 +85,8 @@ namespace CoiMapper.Schema {
         public Deposit[] Deposits;
         /// <summary>The fleet, counted per prototype. Absent in files written before this existed.</summary>
         public VehicleCensus Vehicles;
+        /// <summary>The player's logistics zones: the map layer draws them, and VehicleCount.zone refers to them. Default zone first, then the order the game holds them in; consumers group in this order rather than re-sorting, so the writer stays the one place that decides it. Empty means zone data was not exported — a file written before zones existed, or a zone manager that would not resolve — and never means "this world has no zones", because the game always has a default zone and a manager that resolved always yields at least one.</summary>
+        public Zone[] Zones;
         public Counts Counts;
 
         public void WriteTo(JsonWriter w) {
@@ -99,6 +101,7 @@ namespace CoiMapper.Schema {
             w.Name("tileSurfaces").BeginArray(); foreach (var v in TileSurfaces ?? new TileSurface[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("deposits").BeginArray(); foreach (var v in Deposits ?? new Deposit[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("vehicles"); Vehicles.WriteTo(w);
+            w.Name("zones").BeginArray(); foreach (var v in Zones ?? new Zone[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("counts"); Counts.WriteTo(w);
             w.EndObject();
         }
@@ -229,7 +232,7 @@ namespace CoiMapper.Schema {
         /// <summary>Display name, e.g. "Haul truck (dump) (Diesel)". The fuel variant is part of the game's own name.</summary>
         public string Name;
         public VehicleKind Kind;
-        /// <summary>Key into VehicleCensus.zones, or -1 for a machine that has no zone. Every road vehicle belongs to exactly one logistics zone — the default zone if the player never moved it — so -1 means train cars, which the game gives no zone at all, or an export whose zone manager would not resolve.</summary>
+        /// <summary>Key into Manifest.zones, or -1 for a machine that has no zone. Every road vehicle belongs to exactly one logistics zone — the default zone if the player never moved it — so -1 means train cars, which the game gives no zone at all, or an export whose zone manager would not resolve.</summary>
         public int Zone;
         public int Count;
 
@@ -244,15 +247,17 @@ namespace CoiMapper.Schema {
         }
     }
 
-    public sealed class VehicleZone {
+    public sealed class Zone {
         /// <summary>The game's own zone id; what VehicleCount.zone refers to.</summary>
         public int Id;
         /// <summary>Display name. The player's own name where they set one, else the game's.</summary>
         public string Name;
-        /// <summary>The zone's colour in game, as "#rrggbb". Used as a swatch, not a fill.</summary>
+        /// <summary>The zone's colour in game, as "#rrggbb". Used for both the swatch and the map fill.</summary>
         public string Color;
         /// <summary>True for the one zone the game creates itself and the player cannot remove.</summary>
         public bool IsDefault;
+        /// <summary>The zone boundary as flattened tile coordinates, [x0,y0,x1,y1,...] — the same encoding Transport.points uses. A closed ring: the last vertex joins the first, and no vertex is repeated to say so. Empty when the zone has no polygon, which draws nothing rather than a degenerate shape.</summary>
+        public int[] Area;
 
         public void WriteTo(JsonWriter w) {
             w.BeginObject();
@@ -260,6 +265,7 @@ namespace CoiMapper.Schema {
             w.Name("name").Value(Name);
             w.Name("color").Value(Color);
             w.Name("isDefault").Value(IsDefault);
+            w.Name("area").BeginArray(); foreach (var v in Area ?? new int[0]) { w.Value(v); } w.EndArray();
             w.EndObject();
         }
     }
@@ -269,8 +275,6 @@ namespace CoiMapper.Schema {
         public bool Exported;
         /// <summary>One row per prototype *per zone* — the finest grain, so a panel can total it by kind or by zone without the format changing. Ordered by kind (the VehicleKind declaration order), then zone, then count descending, then name. The exporter fixes the order so two exports of the same world agree byte for byte.</summary>
         public VehicleCount[] Types;
-        /// <summary>The zones VehicleCount.zone refers to, default zone first and then the order the game holds them in; the UI groups by this order rather than re-sorting, so the writer stays the one place that decides it. Empty means zone data was not exported — a mod build from before zones, or a zone manager that would not resolve — and never means "this world has no zones", because the game always has a default zone and a manager that resolved always yields at least one. That is why zones need no `exported` flag of their own, unlike the census.</summary>
-        public VehicleZone[] Zones;
         /// <summary>Total road vehicles.</summary>
         public int Vehicles;
         /// <summary>Total locomotives and cargo wagons.</summary>
@@ -286,7 +290,6 @@ namespace CoiMapper.Schema {
             w.BeginObject();
             w.Name("exported").Value(Exported);
             w.Name("types").BeginArray(); foreach (var v in Types ?? new VehicleCount[0]) { v.WriteTo(w); } w.EndArray();
-            w.Name("zones").BeginArray(); foreach (var v in Zones ?? new VehicleZone[0]) { v.WriteTo(w); } w.EndArray();
             w.Name("vehicles").Value(Vehicles);
             w.Name("trainCars").Value(TrainCars);
             w.Name("trains").Value(Trains);

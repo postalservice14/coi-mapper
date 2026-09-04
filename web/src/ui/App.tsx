@@ -17,6 +17,8 @@ const DEFAULT_VISIBILITY: Record<LayerName, boolean> = {
   entities: true,
   transports: true,
   power: false,
+  // Off by default: zones tint the terrain, so turning them on is a deliberate act.
+  zones: false,
   grid: true,
 };
 
@@ -88,7 +90,12 @@ export function App() {
       </div>
 
       <StatusBar doc={doc} hit={hit} />
-      <VehiclesDialog census={manifest.vehicles} open={showFleet} onClose={() => setShowFleet(false)} />
+      <VehiclesDialog
+        census={manifest.vehicles}
+        zones={manifest.zones}
+        open={showFleet}
+        onClose={() => setShowFleet(false)}
+      />
     </div>
   );
 }

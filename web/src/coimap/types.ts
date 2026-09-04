@@ -31,7 +31,7 @@ export interface MapLayers {
   designations?: LayerChunk[];
 }
 
-export type LayerName = keyof MapLayers | 'transports' | 'power' | 'grid';
+export type LayerName = keyof MapLayers | 'transports' | 'power' | 'grid' | 'zones';
 
 /** Everything the renderer needs, produced by the loader worker. */
 export interface WorkerDoc {

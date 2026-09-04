@@ -9,6 +9,7 @@ import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Entity } from '../coimap/schema.gen';
 import type { LayerName, WorkerDoc } from '../coimap/types';
 import { hasSparseFootprint } from '../coimap/footprint';
+import { parseHex } from '../coimap/terrain';
 
 const MAX_ZOOM = 48;         // screen pixels per tile
 const MIN_ZOOM_FACTOR = 0.6; // relative to the fit-to-screen scale
@@ -89,6 +90,23 @@ const GRID_MAJOR_TIGHT_SPACING_PX = 20;
 const GRID_MAJOR_CLEAR_SPACING_PX = 60;
 const GRID_MAJOR_FAINT_ALPHA = 0.18;
 
+/**
+ * How heavily a zone washes the terrain under it, and how thick its boundary is in screen
+ * pixels.
+ *
+ * The wash is deliberately light. Zones can be large and can overlap the deposit and
+ * designation overlays, and the layer has to leave all of that readable — its job is to
+ * say where a boundary falls, not to recolour the map.
+ */
+const ZONE_FILL_ALPHA = 0.16;
+const ZONE_EDGE_PX = 2;
+
+/** Packs "#rrggbb" into the 0xrrggbb Pixi wants, borrowing the raster parser's fallback. */
+function zoneColor(hex: string): number {
+  const [r, g, b] = parseHex(hex);
+  return (r << 16) | (g << 8) | b;
+}
+
 const TRANSPORT_STYLE: Record<string, { color: number; width: number }> = {
   Conveyor: { color: 0xf0d878, width: 0.55 },
   Pipe: { color: 0x63c8e0, width: 0.55 },
@@ -142,6 +160,7 @@ export class MapScene {
   private readonly world = new Container();
   private readonly sprites = new Map<LayerName, Container>();
   private readonly grid = new Graphics();
+  private readonly zones = new Graphics();
   private readonly highlight = new Graphics();
   private observer: ResizeObserver | null = null;
   private pendingResize = 0;
@@ -405,7 +424,12 @@ export class MapScene {
         this.world.addChild(container);
         debugLog(`scene: uploaded layer "${name}" (${chunks.length} chunks)`);
       }
-      if (name === 'entities') this.world.addChild(this.buildTransports(), this.buildPower());
+      if (name === 'entities') {
+        // Zones go under the transport and power lines: they are an area wash, and a wash
+        // painted over a 0.28-tile conveyor line is what makes one hard to follow.
+        this.sprites.set('zones', this.zones);
+        this.world.addChild(this.zones, this.buildTransports(), this.buildPower());
+      }
     }
 
     if (new URLSearchParams(location.search).get('debug') === '1') {
@@ -559,6 +583,7 @@ export class MapScene {
   private cameraChanged() {
     this.publishCamera();
     this.drawGrid();
+    this.drawZones();
   }
 
   /** Mirrors camera state onto the canvas as data attributes, for tests and debugging. */
@@ -715,14 +740,57 @@ export class MapScene {
     g.stroke({ width, color: GRID_COLOR, alpha, alignment: 0.5 });
   }
 
+  // ── logistics zones ───────────────────────────────────────────────────────
+  /**
+   * Draws each zone the player drew: its own colour, washed over the area and drawn round
+   * the boundary.
+   *
+   * Redrawn on every camera change rather than built once, for the outline. A stroke width
+   * is in world units, so a fixed one is a hairline at whole-map zoom and a fat band close
+   * in; dividing by the zoom pins it to screen pixels, the same trick the grid and the
+   * selection highlight use. The fill would not need this — only the stroke does — but a
+   * Graphics is cleared and rebuilt as a whole, so they go together.
+   *
+   * Cheap enough to do that with: a world holds a handful of zones of a few vertices each,
+   * which is why this needs none of the viewport culling the grid cannot do without.
+   *
+   * Vertices are tile coordinates and the world is in tiles, so they go in untransformed —
+   * including under rotation, which is a property of the camera and not of the geometry.
+   */
+  private drawZones() {
+    const g = this.zones;
+    g.clear();
+    if (!g.visible) return;
+
+    // Stroke width is world units; divide by zoom to pin it to screen pixels.
+    const px = 1 / this.zoom;
+
+    for (const zone of this.doc.manifest.zones) {
+      const pts = zone.area;
+      // Fewer than three vertices is not an area. The exporter already collapses those to
+      // an empty ring, so this is the net under a hand-made or future file.
+      if (pts.length < 6) continue;
+
+      const color = zoneColor(zone.color);
+      g.moveTo(pts[0]!, pts[1]!);
+      for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i]!, pts[i + 1]!);
+      g.closePath();
+      // The ring arrives open — the exporter does not repeat the first vertex — so the
+      // path is closed here rather than in the data.
+      g.fill({ color, alpha: ZONE_FILL_ALPHA });
+      g.stroke({ width: ZONE_EDGE_PX * px, color, alpha: 0.9, join: 'round' });
+    }
+  }
+
   // ── layers & highlight ────────────────────────────────────────────────────
   setLayerVisible(name: LayerName, visible: boolean) {
     const layer = this.sprites.get(name);
     if (!layer) return;
     layer.visible = visible;
-    // The grid is drawn for the camera it was last shown at, and drawGrid() skips a
-    // hidden grid entirely, so a visibility flip has to be followed by a redraw.
+    // Both are drawn for the camera they were last shown at, and both skip the work
+    // entirely while hidden, so a visibility flip has to be followed by a redraw.
     if (name === 'grid') this.drawGrid();
+    if (name === 'zones') this.drawZones();
   }
 
   /** Draws the hover and selection outlines. Pass -1 for none. */

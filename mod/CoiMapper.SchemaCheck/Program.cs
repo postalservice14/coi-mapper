@@ -191,11 +191,26 @@ namespace CoiMapper.SchemaCheck {
                 });
 
                 // The player's logistics zones. The default zone leads, as the writer emits
-                // it, and the panel groups in this order rather than sorting for itself.
-                var zones = new List<VehicleZone> {
-                    new VehicleZone { Id = 1, Name = "Default", Color = "#8899aa", IsDefault = true },
-                    new VehicleZone { Id = 2, Name = "Mining north", Color = "#c04a2b", IsDefault = false },
-                    new VehicleZone { Id = 3, Name = "Smelter \"hot\" yard — ünïcode", Color = "#2b7cc0", IsDefault = false },
+                // it, and consumers group in this order rather than sorting for themselves.
+                //
+                // The middle zone is deliberately an L, not a box: it is non-convex, its
+                // vertices wind clockwise, and no two edges are parallel by accident, so a
+                // renderer that dropped a vertex, closed the ring early or reversed the
+                // winding produces a visibly different shape rather than the same rectangle.
+                var zones = new List<Zone> {
+                    new Zone {
+                        Id = 1, Name = "Default", Color = "#8899aa", IsDefault = true,
+                        Area = new[] { 0, 0, 63, 0, 63, 47, 0, 47 },
+                    },
+                    new Zone {
+                        Id = 2, Name = "Mining north", Color = "#c04a2b", IsDefault = false,
+                        Area = new[] { 4, 4, 24, 4, 24, 14, 14, 14, 14, 30, 4, 30 },
+                    },
+                    new Zone {
+                        Id = 3, Name = "Smelter \"hot\" yard — ünïcode", Color = "#2b7cc0", IsDefault = false,
+                        // A zone the player has not drawn yet: exported, but nothing to draw.
+                        Area = new int[0],
+                    },
                 };
 
                 // Built through the real VehicleTally rather than as a literal, so the
@@ -230,7 +245,8 @@ namespace CoiMapper.SchemaCheck {
                     Surfaces = surfaces.ToArray(),
                     TileSurfaces = tileSurfaces.ToArray(),
                     Deposits = deposits.ToArray(),
-                    Vehicles = tally.ToCensus(zones, trains: 2, limit: 40, limitLeft: 27),
+                    Vehicles = tally.ToCensus(trains: 2, limit: 40, limitLeft: 27),
+                    Zones = zones.ToArray(),
                     Counts = new Counts { Entities = entities.Count, Transports = 1, Edges = 1, Protos = entities.Count },
                 };
                 archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);

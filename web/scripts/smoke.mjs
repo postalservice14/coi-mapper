@@ -139,6 +139,39 @@ try {
   await page.screenshot({ path: `${outDir}/3-all-layers.png` });
   check('optional layers toggle', true, `${toggled} toggled, ${unavailable} absent from this export`);
 
+  // ── the logistics zone layer ────────────────────────────────────────────────
+  // A vector layer rather than a baked raster, so what is worth proving is that turning it
+  // on reaches the canvas at all. Comparing the canvas screenshot before and after is the
+  // only way to see that from out here: the WebGL drawing buffer cannot be read back.
+  const zoneRow = page.locator('label.toggle').filter({ hasText: 'Logistics zones' });
+  check('zone layer is offered for an export that has zones',
+    (await zoneRow.locator('input:disabled').count()) === 0, 'enabled');
+
+  const beforeZones = await page.locator('canvas.map-canvas').screenshot();
+  await zoneRow.click();
+  await page.waitForTimeout(500);
+  const afterZones = await page.locator('canvas.map-canvas').screenshot();
+  check('enabling zones changes what is drawn',
+    !beforeZones.equals(afterZones),
+    `${(beforeZones.length / 1024).toFixed(0)} KB -> ${(afterZones.length / 1024).toFixed(0)} KB`);
+
+  // The map carries no zone labels, so the legend is the only thing that turns a colour
+  // into a zone name. It must list every zone the export holds.
+  const zoneLegend = await page.locator('.sidebar .legend-group')
+    .filter({ hasText: 'Logistics zones' }).locator('.legend-row').allTextContents();
+  check('legend names every zone',
+    zoneLegend.map((t) => t.trim()).join(' | ') === 'Default | Mining north | Smelter yard',
+    zoneLegend.map((t) => t.trim()).join(' | '));
+
+  // Off again, and the canvas must return to what it was. A layer that cannot be turned
+  // back off is the failure this catches — drawZones() skips a hidden layer, so a stale
+  // Graphics would keep the wash on screen.
+  await zoneRow.click();
+  await page.waitForTimeout(500);
+  const offZones = await page.locator('canvas.map-canvas').screenshot();
+  check('disabling zones puts the map back', offZones.equals(beforeZones),
+    offZones.equals(beforeZones) ? 'identical' : 'canvas still differs');
+
   // The grid is drawn straight into the canvas, so there is no DOM node to assert on.
   // The scene publishes its chosen tile step as a data attribute for exactly this.
   const gridStep = () => page.evaluate(() => document.querySelector('canvas.map-canvas').dataset.gridStep);

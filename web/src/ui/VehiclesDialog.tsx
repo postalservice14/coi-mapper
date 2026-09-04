@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { VehicleCensus, VehicleCount, VehicleKind, VehicleZone } from '../coimap/schema.gen';
+import type { VehicleCensus, VehicleCount, VehicleKind, Zone } from '../coimap/schema.gen';
 
 interface Props {
   census: VehicleCensus;
+  /** From the manifest, not the census: the map layer draws these same zones. */
+  zones: Zone[];
   open: boolean;
   onClose: () => void;
 }
@@ -107,7 +109,7 @@ function groupByKind(types: VehicleCount[]): Group[] {
  * instead of being forced into one. Empty zones are dropped — a heading with nothing under
  * it reads as a bug rather than as an empty zone.
  */
-function groupByZone(types: VehicleCount[], zones: VehicleZone[]): Group[] {
+function groupByZone(types: VehicleCount[], zones: Zone[]): Group[] {
   const byId = new Map<number, VehicleCount[]>(zones.map((zone) => [zone.id, []]));
   const rail: VehicleCount[] = [];
   const stray: VehicleCount[] = [];
@@ -170,13 +172,13 @@ function Summary({ census, groups }: { census: VehicleCensus; groups: Group[] })
   );
 }
 
-export function VehiclesDialog({ census, open, onClose }: Props) {
+export function VehiclesDialog({ census, zones, open, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>('kind');
 
   // One zone is every save that never used them, and grouping by it would just retitle the
   // whole list — so the toggle appears only where it has something to separate.
-  const canGroupByZone = census.zones.length > 1;
+  const canGroupByZone = zones.length > 1;
   // Derived rather than reset in an effect: loading a save with no zones while the zone
   // view is showing must fall back to kind, and doing that here means there is no render
   // in between where the mode and the toggle disagree.
@@ -184,8 +186,8 @@ export function VehiclesDialog({ census, open, onClose }: Props) {
 
   const groups = useMemo(() => {
     const rows = census.types.filter((row) => !HIDDEN_KINDS.has(row.kind));
-    return mode === 'zone' ? groupByZone(rows, census.zones) : groupByKind(rows);
-  }, [census, mode]);
+    return mode === 'zone' ? groupByZone(rows, zones) : groupByKind(rows);
+  }, [census, zones, mode]);
 
   // showModal() and close() are imperative, so drive them from the prop. Guarding on the
   // element's own state is what makes this safe under StrictMode's double-invoked effects:

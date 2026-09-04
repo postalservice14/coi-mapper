@@ -72,21 +72,38 @@ check('census rows keep kind-then-zone-then-count order',
   order);
 
 // ── logistics zones ──────────────────────────────────────────────────────────
-// The zone table is what VehicleCount.zone points into, and its order is the order the
-// panel groups in — the default zone first.
-const zoneOrder = fleet.zones.map((z) => `${z.id}:${z.name}`).join(' ');
+// Zones live on the manifest, not on the census: the map layer draws them and the vehicle
+// panel groups by them, so neither owns the table.
+const zones = doc.manifest.zones;
+const zoneOrder = zones.map((z) => `${z.id}:${z.name}`).join(' ');
 check('zone table survives in writer order',
   zoneOrder === '1:Default 2:Mining north 3:Smelter "hot" yard — ünïcode', zoneOrder);
 check('exactly one zone is marked default',
-  fleet.zones.filter((z) => z.isDefault).length === 1 && fleet.zones[0].isDefault === true,
-  fleet.zones.filter((z) => z.isDefault).map((z) => z.name).join(','));
+  zones.filter((z) => z.isDefault).length === 1 && zones[0].isDefault === true,
+  zones.filter((z) => z.isDefault).map((z) => z.name).join(','));
 check('zone colours survive as #rrggbb',
-  fleet.zones.every((z) => /^#[0-9a-f]{6}$/.test(z.color)),
-  fleet.zones.map((z) => z.color).join(' '));
+  zones.every((z) => /^#[0-9a-f]{6}$/.test(z.color)),
+  zones.map((z) => z.color).join(' '));
+
+// The polygon. Written as a deliberately non-convex L wound clockwise, so a vertex lost,
+// a ring closed early or a winding reversed shows up as a different shape rather than as
+// the same rectangle. Flattened x,y pairs, exactly as Transport.points are.
+const mining = zones.find((z) => z.id === 2);
+check('zone polygon survives vertex for vertex',
+  mining?.area.join(',') === '4,4,24,4,24,14,14,14,14,30,4,30', mining?.area.join(',') ?? 'missing');
+check('zone polygons are flat x,y pairs',
+  zones.every((z) => z.area.length % 2 === 0),
+  zones.map((z) => z.area.length).join(' '));
+
+// A zone the player has drawn no area for. It must survive as an empty ring rather than
+// as a missing field: the layer draws nothing for it, which is different from not knowing.
+const undrawn = zones.find((z) => z.id === 3);
+check('a zone with no area keeps an empty ring',
+  Array.isArray(undrawn?.area) && undrawn.area.length === 0, JSON.stringify(undrawn?.area));
 
 // Every row either points at a real zone or says it has none. A row pointing at a zone
 // that is not in the table would render under a group the panel had to invent.
-const zoneIds = new Set(fleet.zones.map((z) => z.id));
+const zoneIds = new Set(zones.map((z) => z.id));
 const dangling = fleet.types.filter((v) => v.zone !== -1 && !zoneIds.has(v.zone));
 check('every row resolves to a zone or to none', dangling.length === 0,
   dangling.map((v) => `${v.proto}->${v.zone}`).join(' '));
