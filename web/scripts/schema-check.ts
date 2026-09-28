@@ -32,7 +32,7 @@ check('game info survives', doc.manifest.game.mapName === 'Schema Check' && doc.
 check('float round-trip', doc.manifest.map.minHeight === -12.5 && doc.manifest.map.maxHeight === 240.25,
   `${doc.manifest.map.minHeight} … ${doc.manifest.map.maxHeight}`);
 
-check('entities decoded', doc.entities.length === 5, doc.entities.length);
+check('entities decoded', doc.entities.length === 6, doc.entities.length);
 
 // Sparse footprints: the conveyor must cover only its 13 traced tiles, not its 10x8 box.
 const belt = doc.entities.find((e) => e.proto === 'ConveyorT2');
@@ -62,11 +62,17 @@ check('crossing stacks top-down',
   crossing?.length === 2 && crossing[0] === doc.entities.indexOf(belt!) && crossing[1] === doc.entities.indexOf(pipe!)
     && beltAt(36, 23),
   crossing ? Array.from(crossing, (i) => doc.entities[i]!.proto).join(' over ') : '(no stack)');
-check('only the crossing is stacked', stacks.size === 1, `${stacks.size} stacked tiles`);
+const pillar = doc.entities.find((e) => e.proto === 'TransportsPillar');
+const footing = stacks.get(25 * width + 36);
+check('a pillar at the same height sits under what it carries',
+  footing?.length === 2 && footing[0] === doc.entities.indexOf(pipe!) && footing[1] === doc.entities.indexOf(pillar!)
+    && beltIndex[25 * width + 36] === doc.entities.indexOf(pipe!),
+  footing ? Array.from(footing, (i) => doc.entities[i]!.proto).join(' over ') : '(no stack)');
+check('only the crossing and the footing are stacked', stacks.size === 2, `${stacks.size} stacked tiles`);
 
 // Enums must arrive as the schema's string names, not integers.
 const states = doc.entities.map((e) => e.state).join(',');
-check('enums encoded as names', states === 'Operating,Constructing,Broken,Operating,Operating', states);
+check('enums encoded as names', states === 'Operating,Constructing,Broken,Operating,Operating,Operating', states);
 
 // JSON escaping of quotes, em dash and diacritics.
 const unicode = doc.entities[2]?.proto;

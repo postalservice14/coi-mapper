@@ -7,9 +7,14 @@
  * top-down, for picking and the inspector's stack list.
  *
  * "Top" is the highest bottom Z on that very tile, not over the whole entity: a belt that
- * ramps over a pipe is above it only where it has climbed. Ties go to the entity written
- * last, which is what the index did before it knew about height at all, so an export with
- * no levels behaves exactly as it used to.
+ * ramps over a pipe is above it only where it has climbed.
+ *
+ * At one height, a support loses to whatever it shares the tile with. The game foots a
+ * pipe on the ground with a one-tile pillar occupying the very same volume, and writes the
+ * pillar after the pipe, so without this a click on a ground pipe picked its pillar — on
+ * about 2,200 tiles of a real export. Beyond that, ties go to the entity written last,
+ * which is what the index did before it knew about height at all, so an export with no
+ * levels behaves as it used to.
  */
 import type { Entity } from './schema.gen';
 import type { WorkerDoc } from './types';
@@ -27,7 +32,14 @@ export interface TileIndex {
 export const bottomZ = (entity: Entity, ordinal: number): number =>
   ordinal >= 0 && ordinal < entity.tz.length ? entity.tz[ordinal]! : entity.z0;
 
+/**
+ * Prototypes that exist to hold something else up. Named rather than matched by category:
+ * the game files pillars under Transport, alongside the belts they carry.
+ */
+const SUPPORT_PROTOS = new Set(['TransportsPillar', 'TrainTracksPillar']);
+
 export function buildTileIndex(entities: Entity[], width: number, height: number): TileIndex {
+  const support = Uint8Array.from(entities, (e) => (SUPPORT_PROTOS.has(e.proto) ? 1 : 0));
   const top = new Int32Array(width * height).fill(-1);
   const topZ = new Int32Array(width * height);            // meaningful only where top >= 0
   const shared = new Map<number, number[]>();             // tile → flat [entity, z, entity, z, …]
@@ -41,7 +53,7 @@ export function buildTileIndex(entities: Entity[], width: number, height: number
         let list = shared.get(tile);
         if (!list) shared.set(tile, (list = [prev, topZ[tile]!]));
         list.push(e, z);
-        if (z < topZ[tile]!) return;
+        if (z < topZ[tile]! || (z === topZ[tile] && support[e]! > support[prev]!)) return;
       }
       top[tile] = e;
       topZ[tile] = z;
@@ -52,8 +64,9 @@ export function buildTileIndex(entities: Entity[], width: number, height: number
   for (const [tile, flat] of shared) {
     const order: number[] = [];
     for (let i = 0; i < flat.length; i += 2) order.push(i);
-    // Same rule as `top`: higher first, and the later-written of two at one height.
-    order.sort((a, b) => flat[b + 1]! - flat[a + 1]! || flat[b]! - flat[a]!);
+    // Same rule as `top`: higher first, then anything over a support, then the later-written.
+    order.sort((a, b) =>
+      flat[b + 1]! - flat[a + 1]! || support[flat[a]!]! - support[flat[b]!]! || flat[b]! - flat[a]!);
     stacks.set(tile, Int32Array.from(order, (i) => flat[i]!));
   }
   return { top, stacks };

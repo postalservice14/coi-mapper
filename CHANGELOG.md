@@ -29,6 +29,10 @@ misrendering them.
   level shown anywhere rather than a false "on the ground". Buildings paint under whatever
   is carried over them, so the map shows the belt at a crossing rather than the pipe.
 
+  At one height, a pillar sits under what it holds up. The game foots a pipe on the ground
+  with a one-tile pillar in the very same volume and writes the pillar second, so on about
+  2,200 tiles of a real export a click on a ground pipe picked its pillar instead.
+
 - **A count of every vehicle and train car, behind a "Vehicles" button in the header.** The
   export had no fleet data at all: vehicles are *dynamic* entities, and the exporter's walk
   is over `IStaticEntity`, so trucks and excavators were invisible to it by construction —

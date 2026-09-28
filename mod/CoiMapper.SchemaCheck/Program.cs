@@ -114,6 +114,13 @@ namespace CoiMapper.SchemaCheck {
                     Id = 5, Proto = "PipeT1", X = 36, Y = 21, W = 1, H = 5, Rot = 0,
                     State = EntityState.Operating, Z0 = 11, Z1 = 12,
                 },
+                // The one-tile pillar the game foots a ground pipe with: the same volume as
+                // the pipe at (36, 25), and written after it as the game writes them. The
+                // pipe must still be on top there, or a click on it picks the pillar.
+                new Entity {
+                    Id = 6, Proto = "TransportsPillar", X = 36, Y = 25, W = 1, H = 1, Rot = 0,
+                    State = EntityState.Operating, Z0 = 11, Z1 = 12,
+                },
             };
 
             using (var archive = new CoiMapArchive(path)) {
