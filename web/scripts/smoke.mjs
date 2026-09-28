@@ -235,6 +235,7 @@ try {
   }
 
   // ── stacked picking ─────────────────────────────────────────────────────────
+  let crossing = null;   // the crossing tile's screen position, for the level filter below
   // The fixture's one flat conveyor ramps two levels over a pipe. Selecting it from search
   // centres the camera on it; zoom in there, then hover out from the centre until the
   // status bar reports something underneath — that is the crossing tile.
@@ -258,6 +259,7 @@ try {
         }
       }
     }
+    crossing = spot;
     const statusText = spot ? await page.locator('.statusbar').textContent() : '';
     check('status bar names what is underneath', !!spot && /Flat Conveyor\s\+2.*over Pipe/.test(statusText), statusText.trim());
 
@@ -316,6 +318,53 @@ try {
     const back = await canvas.screenshot();
     check('colouring by category again puts the map back', back.equals(byCategory), back.equals(byCategory) ? 'identical' : 'differs');
     check('height legend leaves with the mode', (await page.locator('.legend-group.levels').count()) === 0);
+  }
+
+  // ── level filter ────────────────────────────────────────────────────────────
+  // A slice at +1 has to bring the pipe up from under the +2 belt at the crossing — in the
+  // painted map, in what the status bar names, and in what a click picks.
+  if (crossing) {
+    const canvas = page.locator('canvas.map-canvas');
+    const settle = async () => {
+      await page.waitForFunction(() => !document.querySelector('.colour-by')?.textContent?.includes('…'), null, { timeout: 15000 });
+      await page.waitForTimeout(300);
+    };
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement) && document.activeElement.blur());
+    await page.locator('.level-filter').hover();
+    const unfiltered = await canvas.screenshot();
+
+    await page.keyboard.press('.');   // full range -> the ground
+    await settle();
+    await page.keyboard.press('.');   // -> +1
+    await settle();
+    const note = (await page.locator('.level-note').textContent()) ?? '';
+    const values = await page.locator('.level-value').allTextContents();
+    check('the slice keys step to a single level', /Only \+1/.test(note) && values.join('/') === '+1/+1', `${values.join(' to ')} · ${note.trim()}`);
+    const sliced = await canvas.screenshot();
+    check('a slice repaints the map', !sliced.equals(unfiltered));
+
+    await page.mouse.move(crossing.x, crossing.y);
+    await page.waitForTimeout(150);
+    const status = (await page.locator('.statusbar').textContent()) ?? '';
+    check('under a slice the level shown comes to the top', /Pipe\s\+1.*over Flat Conveyor/.test(status), status.trim());
+    await page.mouse.click(crossing.x, crossing.y);
+    await page.waitForTimeout(150);
+    check('and a click picks it', (await page.locator('.inspector h2').textContent()) === 'Pipe',
+      (await page.locator('.inspector h2').textContent()) ?? '');
+    await page.screenshot({ path: `${outDir}/7-slice.png` });
+
+    await page.locator('.level-filter').hover();
+    await page.keyboard.press('/');
+    await settle();
+    check('/ shows every level again', (await page.locator('.level-note').textContent())?.includes('All levels') === true);
+    // The click above selected the pipe; step back to the belt so the outline matches too.
+    await page.mouse.click(crossing.x, crossing.y);
+    await page.waitForTimeout(150);
+    const reselected = await page.locator('.inspector h2').textContent();
+    await page.locator('.level-filter').hover();
+    await page.waitForTimeout(200);
+    check('showing every level puts the map back', reselected === 'Flat Conveyor' && (await canvas.screenshot()).equals(unfiltered),
+      `selected ${reselected}`);
   }
 
   // ── the vehicle census dialog ───────────────────────────────────────────────

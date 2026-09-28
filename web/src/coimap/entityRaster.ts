@@ -32,71 +32,60 @@ const DEFAULT_STYLE = { alpha: 0.9 };
 /** How much the one-tile border of each footprint is darkened, to separate neighbours. */
 const EDGE_DARKEN = 0.6;
 
+/** How strongly a tile the level filter leaves out is still drawn, so the map keeps its shape. */
+const FADED_ALPHA = 0.15;
+
+export interface EntityTextureOptions {
+  /**
+   * The topmost entity per tile. Where tiles are shared, only the one on top paints, so a
+   * belt carried over a pipe shows as the belt; without it the last entity written wins.
+   */
+  top?: Int32Array;
+  /**
+   * Colour by level instead of category, given the ground's whole-tile Z per tile. Every
+   * shown tile is drawn at full strength: the state dimming would read as another level.
+   */
+  levelsOver?: Int16Array;
+  /** Tiles the level filter leaves out, drawn faint rather than not at all. */
+  faded?: (entityIndex: number, tile: number, ordinal: number) => boolean;
+}
+
 export function buildEntityTexture(
   entities: Entity[],
   protos: Record<string, Proto>,
   width: number,
   height: number,
-  /**
-   * The topmost entity per tile. Where tiles are shared, only the one on top paints, so a
-   * belt carried over a pipe shows as the belt; without it the last entity written wins.
-   */
-  top?: Int32Array,
-  /**
-   * Colour by level instead of category, given the ground's whole-tile Z per tile. Every
-   * tile is drawn at full strength: the state dimming would read as a different level.
-   */
-  ground?: Int16Array,
+  { top, levelsOver, faded }: EntityTextureOptions = {},
 ): Rgba {
   const rgba = new Uint8ClampedArray(width * height * 4);
-  if (ground) {
-    paintLevels(rgba, entities, width, height, ground, top);
-    return rgba;
-  }
 
   for (let n = 0; n < entities.length; n++) {
     const e = entities[n]!;
-    const proto = protos[e.proto];
-    const base = parseHex(proto?.color ?? CATEGORY_COLORS.Other!);
-    const style = STATE_STYLE[e.state] ?? DEFAULT_STYLE;
-
-    let [r, g, b] = base;
-    if (style.tint) {
-      // Blend halfway to the state tint so the category is still readable.
-      r = (r + style.tint[0]) / 2;
-      g = (g + style.tint[1]) / 2;
-      b = (b + style.tint[2]) / 2;
+    let [r, g, b] = [0, 0, 0];
+    let alpha = 255;
+    if (!levelsOver) {
+      const style = STATE_STYLE[e.state] ?? DEFAULT_STYLE;
+      [r, g, b] = parseHex(protos[e.proto]?.color ?? CATEGORY_COLORS.Other!);
+      if (style.tint) {
+        // Blend halfway to the state tint so the category is still readable.
+        r = (r + style.tint[0]) / 2;
+        g = (g + style.tint[1]) / 2;
+        b = (b + style.tint[2]) / 2;
+      }
+      alpha = Math.round(style.alpha * 255);
     }
-    const alpha = Math.round(style.alpha * 255);
 
-    forEachFootprintTile(e, width, height, (tile, isEdge) => {
+    forEachFootprintTile(e, width, height, (tile, isEdge, ordinal) => {
       if (top && top[tile] !== n) return;
+      if (levelsOver) [r, g, b] = levelRgb(bottomZ(e, ordinal) - levelsOver[tile]!);
       const k = isEdge ? EDGE_DARKEN : 1;
       const o = tile * 4;
       rgba[o] = r * k;
       rgba[o + 1] = g * k;
       rgba[o + 2] = b * k;
-      rgba[o + 3] = alpha;
+      rgba[o + 3] = faded?.(n, tile, ordinal) ? alpha * FADED_ALPHA : alpha;
     });
   }
 
   return rgba;
-}
-
-function paintLevels(
-  rgba: Rgba, entities: Entity[], width: number, height: number, ground: Int16Array, top?: Int32Array,
-): void {
-  for (let n = 0; n < entities.length; n++) {
-    const e = entities[n]!;
-    forEachFootprintTile(e, width, height, (tile, isEdge, ordinal) => {
-      if (top && top[tile] !== n) return;
-      const [r, g, b] = levelRgb(bottomZ(e, ordinal) - ground[tile]!);
-      const k = isEdge ? EDGE_DARKEN : 1;
-      const o = tile * 4;
-      rgba[o] = r * k;
-      rgba[o + 1] = g * k;
-      rgba[o + 2] = b * k;
-      rgba[o + 3] = 255;
-    });
-  }
 }

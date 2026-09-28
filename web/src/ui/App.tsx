@@ -3,7 +3,8 @@ import { useCoiMap } from '../coimap/useCoiMap';
 import { MapView } from '../map/MapView';
 import type { TileHit } from '../map/scene';
 import type { LayerChunk, LayerName } from '../coimap/types';
-import type { ColourBy } from '../coimap/entityRaster';
+import type { BuildingsLook } from '../coimap/loader.worker';
+import { FULL_RANGE } from '../coimap/stack';
 import { DropZone } from './DropZone';
 import { Sidebar } from './Sidebar';
 import { Inspector } from './Inspector';
@@ -23,8 +24,10 @@ const DEFAULT_VISIBILITY: Record<LayerName, boolean> = {
   grid: true,
 };
 
+const DEFAULT_LOOK: BuildingsLook = { colourBy: 'category', range: FULL_RANGE };
+
 export function App() {
-  const { doc, error, progress, fileName, load, recolour, reset } = useCoiMap();
+  const { doc, error, progress, fileName, load, rebake, reset } = useCoiMap();
   const [visibility, setVisibility] = useState(DEFAULT_VISIBILITY);
   const [selected, setSelected] = useState(-1);
   // Where on the map the selection was clicked. A pipe under a belt shares that tile with
@@ -34,33 +37,35 @@ export function App() {
   const [focus, setFocus] = useState<{ tx: number; ty: number } | null>(null);
   const [showFleet, setShowFleet] = useState(false);
 
-  // How the buildings layer is coloured, and the re-baked layer that shows it. The mode
-  // flips at once so the control answers the click; the map follows when the worker does.
-  const [colourBy, setColourBy] = useState<ColourBy>('category');
+  // How the buildings layer is drawn — its colouring and the levels it shows — and the
+  // re-baked layer that draws it. The look changes at once so the controls answer the
+  // input; the map follows when the worker does.
+  const [look, setLook] = useState<BuildingsLook>(DEFAULT_LOOK);
   const [entityChunks, setEntityChunks] = useState<LayerChunk[] | null>(null);
-  const [recolouring, setRecolouring] = useState(false);
-  const [recolourError, setRecolourError] = useState<string | null>(null);
-  const recolourToken = useRef(0);
+  const [rebaking, setRebaking] = useState(false);
+  const [rebakeError, setRebakeError] = useState<string | null>(null);
+  const rebakeToken = useRef(0);
 
-  const changeColourBy = useCallback((mode: ColourBy) => {
-    const token = ++recolourToken.current;
-    const previous = colourBy;
-    setColourBy(mode);
-    setRecolouring(true);
-    setRecolourError(null);
-    recolour(mode)
+  const changeLook = useCallback((next: Partial<BuildingsLook>) => {
+    const token = ++rebakeToken.current;
+    const previous = look;
+    const wanted = { ...look, ...next };
+    setLook(wanted);
+    setRebaking(true);
+    setRebakeError(null);
+    rebake(wanted)
       .then((chunks) => {
-        // A later click has already asked for something else; these bitmaps are nobody's.
-        if (token !== recolourToken.current) { for (const c of chunks) c.bitmap.close(); return; }
+        // A later change has already asked for something else; these bitmaps are nobody's.
+        if (token !== rebakeToken.current) { for (const c of chunks) c.bitmap.close(); return; }
         setEntityChunks(chunks);
       })
       .catch((err: Error) => {
-        if (token !== recolourToken.current) return;
-        setColourBy(previous);
-        setRecolourError(`Could not recolour the map: ${err.message}`);
+        if (token !== rebakeToken.current) return;
+        setLook(previous);
+        setRebakeError(`Could not redraw the buildings: ${err.message}`);
       })
-      .finally(() => { if (token === recolourToken.current) setRecolouring(false); });
-  }, [colourBy, recolour]);
+      .finally(() => { if (token === rebakeToken.current) setRebaking(false); });
+  }, [look, rebake]);
 
   const toggle = useCallback((layer: LayerName) => {
     setVisibility((v) => ({ ...v, [layer]: !v[layer] }));
@@ -90,8 +95,8 @@ export function App() {
 
   useEffect(() => {
     setSelected(-1); setSelectedAt(null); setFocus(null); setShowFleet(false);
-    recolourToken.current++;
-    setColourBy('category'); setEntityChunks(null); setRecolouring(false); setRecolourError(null);
+    rebakeToken.current++;
+    setLook(DEFAULT_LOOK); setEntityChunks(null); setRebaking(false); setRebakeError(null);
   }, [doc]);
 
   if (!doc) return <DropZone onFile={load} progress={progress} error={error} />;
@@ -122,10 +127,10 @@ export function App() {
           visibility={visibility}
           onToggle={toggle}
           onPick={pick}
-          colourBy={colourBy}
-          onColourBy={changeColourBy}
-          recolouring={recolouring}
-          recolourError={recolourError}
+          look={look}
+          onLook={changeLook}
+          rebaking={rebaking}
+          rebakeError={rebakeError}
         />
         <main className="stage">
           <MapView
@@ -136,6 +141,8 @@ export function App() {
             onHover={setHit}
             focus={focus}
             entityChunks={entityChunks}
+            levelRange={look.range}
+            onLook={changeLook}
           />
         </main>
         {selected >= 0 && (

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { LoaderRequest, LoaderResponse } from './loader.worker';
-import type { ColourBy } from './entityRaster';
+import type { BuildingsLook, LoaderRequest, LoaderResponse } from './loader.worker';
 import type { LayerChunk, LoadProgress, WorkerDoc } from './types';
 
 interface State {
@@ -15,7 +14,7 @@ const IDLE: State = { doc: null, error: null, progress: null, fileName: null };
 type Pending = { resolve: (chunks: LayerChunk[]) => void; reject: (err: Error) => void };
 
 /**
- * Owns the loader worker: `load(file)` to open a map, then `recolour` to re-bake its
+ * Owns the loader worker: `load(file)` to open a map, then `rebake` to redraw its
  * buildings layer. The worker stays alive after a load for the second, and is replaced
  * only by the next load.
  */
@@ -45,12 +44,12 @@ export function useCoiMap() {
 
     worker.onmessage = (event: MessageEvent<LoaderResponse>) => {
       const msg = event.data;
-      if ('recoloured' in msg || 'recolourFailed' in msg) {
-        const id = 'recoloured' in msg ? msg.recoloured.id : msg.recolourFailed.id;
+      if ('rebaked' in msg || 'rebakeFailed' in msg) {
+        const id = 'rebaked' in msg ? msg.rebaked.id : msg.rebakeFailed.id;
         const pending = pendingRef.current.get(id);
         pendingRef.current.delete(id);
-        if ('recoloured' in msg) pending?.resolve(msg.recoloured.chunks);
-        else pending?.reject(new Error(msg.recolourFailed.error));
+        if ('rebaked' in msg) pending?.resolve(msg.rebaked.chunks);
+        else pending?.reject(new Error(msg.rebakeFailed.error));
       } else if ('progress' in msg) {
         setState((s) => ({ ...s, progress: msg.progress }));
       } else if (msg.ok) {
@@ -75,14 +74,14 @@ export function useCoiMap() {
     }
   }, [abandon]);
 
-  /** Re-bakes the loaded map's buildings layer; resolves with its new chunks. */
-  const recolour = useCallback((colourBy: ColourBy): Promise<LayerChunk[]> => {
+  /** Re-bakes the loaded map's buildings layer to a new look; resolves with its chunks. */
+  const rebake = useCallback((look: BuildingsLook): Promise<LayerChunk[]> => {
     const worker = workerRef.current;
     if (!worker) return Promise.reject(new Error('No map is loaded.'));
     const id = nextIdRef.current++;
     return new Promise((resolve, reject) => {
       pendingRef.current.set(id, { resolve, reject });
-      worker.postMessage({ kind: 'recolour', id, colourBy } satisfies LoaderRequest);
+      worker.postMessage({ kind: 'rebake', id, look } satisfies LoaderRequest);
     });
   }, []);
 
@@ -93,5 +92,5 @@ export function useCoiMap() {
     setState(IDLE);
   }, [abandon]);
 
-  return { ...state, load, recolour, reset };
+  return { ...state, load, rebake, reset };
 }

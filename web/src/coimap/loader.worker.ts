@@ -6,7 +6,8 @@
  * uploaded to the GPU directly, so the main thread never touches raw pixels.
  */
 import { parseCoiMap, CoiMapError } from './parse';
-import { buildTileIndex, groundLevels } from './stack';
+import { buildTileIndex, groundLevels, isFullRange, tileInRange } from './stack';
+import type { LevelRange } from './stack';
 import { buildTextures } from './terrain';
 import { buildEntityTexture } from './entityRaster';
 import type { ColourBy } from './entityRaster';
@@ -113,33 +114,41 @@ export interface LoadRequest {
   debug?: boolean;
 }
 
-/** Re-bakes the buildings layer in another colouring, for the map that is loaded. */
-export interface RecolourRequest {
-  kind: 'recolour';
-  /** Echoed back, so a reply to a request that has since been superseded can be dropped. */
-  id: number;
+/** How the buildings layer should be baked: its colouring, and the levels it shows. */
+export interface BuildingsLook {
   colourBy: ColourBy;
+  /** Levels drawn at full strength; the rest are faded. The full range fades nothing. */
+  range: LevelRange;
 }
 
-export type LoaderRequest = LoadRequest | RecolourRequest;
+/** Re-bakes the buildings layer for the map that is loaded. */
+export interface RebakeRequest {
+  kind: 'rebake';
+  /** Echoed back, so a reply to a request that has since been superseded can be dropped. */
+  id: number;
+  look: BuildingsLook;
+}
+
+export type LoaderRequest = LoadRequest | RebakeRequest;
 
 export type LoaderResponse =
   | { ok: true; doc: WorkerDoc }
   | { ok: false; error: string }
   | { progress: LoadProgress }
-  | { recoloured: { id: number; chunks: LayerChunk[] } }
-  | { recolourFailed: { id: number; error: string } };
+  | { rebaked: { id: number; chunks: LayerChunk[] } }
+  | { rebakeFailed: { id: number; error: string } };
 
 /**
  * What a re-bake needs, kept after the load has handed everything else to the page.
  *
  * The worker outlives the load for this: rasterising belongs off the main thread, and a
  * second full-map layer would cost every layer its resolution on a large map — six layers
- * of a 3584x3840 export pass the texture budget where five fit. So colouring is a mode of
- * the one buildings layer, baked here on demand, rather than a layer of its own.
+ * of a 3584x3840 export pass the texture budget where five fit. So colouring and the level
+ * filter are modes of the one buildings layer, baked here on demand, not layers of their own.
  *
  * The tile index is rebuilt per request rather than kept: it is 55 MB on that map and
- * 80 ms to recompute, and a recolour is a click, not a frame. `ground` is kept because the
+ * 80 ms to recompute, and a rebake is a click, not a frame — and under a level filter it
+ * ranks differently anyway. `ground` is kept because the
  * height plane it comes from is transferred to the page with the rest of the document.
  */
 let session: {
@@ -151,18 +160,29 @@ let session: {
   ground: Int16Array | null;
 } | null = null;
 
-async function recolour({ id, colourBy }: RecolourRequest) {
+async function rebake({ id, look }: RebakeRequest) {
   try {
     if (!session) throw new Error('No map is loaded.');
     const { entities, protos, width, height, factor, ground } = session;
-    if (colourBy === 'height' && !ground) throw new Error('This export carries no heights.');
-    const { top } = buildTileIndex(entities, width, height);
-    const rgba = buildEntityTexture(entities, protos, width, height, top, colourBy === 'height' ? ground! : undefined);
+    const filtering = !isFullRange(look.range);
+    if ((look.colourBy === 'height' || filtering) && !ground) throw new Error('This export carries no heights.');
+
+    // Under a filter, what it shows outranks what it fades, so a pipe under a belt comes
+    // to the top at a crossing when the band holds the pipe's level and not the belt's.
+    const shown = filtering
+      ? (n: number, tile: number, ordinal: number) => tileInRange(entities[n]!, ordinal, ground![tile]!, look.range)
+      : undefined;
+    const { top } = buildTileIndex(entities, width, height, shown);
+    const rgba = buildEntityTexture(entities, protos, width, height, {
+      top,
+      levelsOver: look.colourBy === 'height' ? ground! : undefined,
+      faded: shown && ((n, tile, ordinal) => !shown(n, tile, ordinal)),
+    });
     const chunks = await toChunks(rgba, width, height, factor);
-    stage(`recoloured buildings by ${colourBy}: ${chunks.length} chunks`);
-    self.postMessage({ recoloured: { id, chunks } } satisfies LoaderResponse, { transfer: chunks.map((c) => c.bitmap) });
+    stage(`rebaked buildings (${look.colourBy}, levels ${look.range.min}..${look.range.max}): ${chunks.length} chunks`);
+    self.postMessage({ rebaked: { id, chunks } } satisfies LoaderResponse, { transfer: chunks.map((c) => c.bitmap) });
   } catch (err) {
-    self.postMessage({ recolourFailed: { id, error: (err as Error).message } } satisfies LoaderResponse);
+    self.postMessage({ rebakeFailed: { id, error: (err as Error).message } } satisfies LoaderResponse);
   }
 }
 
@@ -181,8 +201,8 @@ const stage = (message: string) => {
 };
 
 self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
-  if (event.data.kind === 'recolour') {
-    await recolour(event.data);
+  if (event.data.kind === 'rebake') {
+    await rebake(event.data);
     return;
   }
   const request = event.data;
@@ -202,7 +222,7 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
     report({ stage: 'rendering', detail: `${width}x${height} tiles` });
     const rasters = {
       ...buildTextures(parsed.planes, parsed.manifest),
-      entities: buildEntityTexture(parsed.entities, parsed.protos, width, height, tileToEntity),
+      entities: buildEntityTexture(parsed.entities, parsed.protos, width, height, { top: tileToEntity }),
     };
 
     // Only upload layers that have something to draw; a null raster means the export

@@ -14,6 +14,21 @@ misrendering them.
 
 ### Added
 
+- **A level filter: show only what is at the levels you pick.** Two sliders under the
+  Buildings toggle, Lowest and Highest, over the same stops as the height legend — from
+  "below ground" to "+6 and up". What falls in the band is drawn at full strength and the
+  rest faded to a trace, so the map keeps its shape. Setting both ends to one level is a
+  single-level slice, and <kbd>,</kbd> / <kbd>.</kbd> step it down and up (not [ and ],
+  which turn the map); <kbd>/</kbd> shows every level again. It works with either
+  colouring.
+
+  The filter decides what is on top, not only what is bright: slice at +1 and the pipe
+  under a +2 belt comes up at the crossing — drawn over the belt, named first in the status
+  bar, and picked by a click. A building counts at every level it spans, so a slice at +2
+  keeps a three-high machine standing on the ground, as it physically reaches there. Each
+  change is a re-bake of the one buildings layer, about 0.2 s on a 3584x3840 map, done
+  when a slider is let go rather than on every step of the drag.
+
 - **The buildings layer can be coloured by height** — a "Colour by: Category | Height"
   switch under the Buildings toggle. Ground level is a recessive grey, each level up a
   lighter step of blue to "+6 and up", and anything buried below the terrain red, with a

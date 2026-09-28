@@ -2,49 +2,21 @@ import { useMemo, useState } from 'react';
 import type { Entity } from '../coimap/schema.gen';
 import type { LayerName, WorkerDoc } from '../coimap/types';
 import type { ColourBy } from '../coimap/entityRaster';
-import { LEVEL_LEGEND } from '../coimap/levelPalette';
+import type { BuildingsLook } from '../coimap/loader.worker';
+import { BELOW_GROUND, LEVEL_LEGEND, TOP_LEVEL, levelLabel } from '../coimap/levelPalette';
+import { FULL_RANGE, isFullRange } from '../coimap/stack';
+import type { LevelRange } from '../coimap/stack';
 
 interface Props {
   doc: WorkerDoc;
   visibility: Record<LayerName, boolean>;
   onToggle: (layer: LayerName) => void;
   onPick: (entityIndex: number) => void;
-  colourBy: ColourBy;
-  onColourBy: (mode: ColourBy) => void;
-  /** True while the worker re-bakes the buildings layer for a new colouring. */
-  recolouring: boolean;
-  recolourError: string | null;
-}
-
-/**
- * The buildings layer's colouring, under its toggle. Height is offered only when the
- * export carries levels — an older one would colour everything "ground", which is wrong
- * rather than merely unhelpful.
- */
-function ColourByControl({ doc, colourBy, onColourBy, recolouring, recolourError }: Pick<Props, 'doc' | 'colourBy' | 'onColourBy' | 'recolouring' | 'recolourError'>) {
-  const option = (mode: ColourBy, label: string, enabled: boolean, title: string) => (
-    <button
-      className={colourBy === mode ? 'on' : undefined}
-      aria-pressed={colourBy === mode}
-      disabled={!enabled || recolouring}
-      title={title}
-      onClick={() => colourBy !== mode && onColourBy(mode)}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <>
-      <div className="groupby colour-by" role="group" aria-label="Colour buildings by">
-        <span className="muted">Colour by</span>
-        {option('category', 'Category', true, 'What each building does')}
-        {option('height', 'Height', doc.hasLevels,
-          doc.hasLevels ? 'Level above the terrain: what is lifted over what' : 'This export carries no heights — re-export with the current mod')}
-        {recolouring && <span className="muted">…</span>}
-      </div>
-      {recolourError && <p className="error-note">{recolourError}</p>}
-    </>
-  );
+  look: BuildingsLook;
+  onLook: (next: Partial<BuildingsLook>) => void;
+  /** True while the worker re-bakes the buildings layer for a new look. */
+  rebaking: boolean;
+  rebakeError: string | null;
 }
 
 interface LayerRow {
@@ -71,7 +43,95 @@ const LAYERS: LayerRow[] = [
 
 const MAX_RESULTS = 60;
 
-export function Sidebar({ doc, visibility, onToggle, onPick, colourBy, onColourBy, recolouring, recolourError }: Props) {
+type LookProps = Pick<Props, 'doc' | 'look' | 'onLook' | 'rebaking'>;
+
+/**
+ * The buildings layer's colouring, under its toggle. Height is offered only when the
+ * export carries levels — an older one would colour everything "ground", which is wrong
+ * rather than merely unhelpful.
+ */
+function ColourByControl({ doc, look, onLook, rebaking }: LookProps) {
+  const option = (mode: ColourBy, label: string, enabled: boolean, title: string) => (
+    <button
+      className={look.colourBy === mode ? 'on' : undefined}
+      aria-pressed={look.colourBy === mode}
+      disabled={!enabled || rebaking}
+      title={title}
+      onClick={() => look.colourBy !== mode && onLook({ colourBy: mode })}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="groupby colour-by" role="group" aria-label="Colour buildings by">
+      <span className="muted">Colour by</span>
+      {option('category', 'Category', true, 'What each building does')}
+      {option('height', 'Height', doc.hasLevels,
+        doc.hasLevels ? 'Level above the terrain: what is lifted over what' : 'This export carries no heights — re-export with the current mod')}
+      {rebaking && <span className="muted">…</span>}
+    </div>
+  );
+}
+
+/**
+ * The band of levels drawn at full strength; the rest fade. Two sliders over the legend's
+ * own stops, from "below ground" to "+6 and up", committed when let go rather than on
+ * every step of a drag — each commit is a re-bake of the whole layer. Setting both ends
+ * to one level is the single-level slice.
+ */
+function LevelFilter({ doc, look, onLook, rebaking }: LookProps) {
+  const [draft, setDraft] = useState<LevelRange | null>(null);
+  const shown = draft ?? look.range;
+  if (!doc.hasLevels) return null;
+
+  // Each handle pushes the other along rather than crossing it.
+  const move = (end: 'min' | 'max', value: number) =>
+    setDraft(end === 'min'
+      ? { min: value, max: Math.max(value, shown.max) }
+      : { min: Math.min(value, shown.min), max: value });
+  const commit = () => {
+    if (draft && (draft.min !== look.range.min || draft.max !== look.range.max)) onLook({ range: draft });
+    setDraft(null);
+  };
+  const slider = (end: 'min' | 'max', label: string) => (
+    <label className="level-slider">
+      <span className="muted">{label}</span>
+      <input
+        type="range"
+        min={BELOW_GROUND}
+        max={TOP_LEVEL}
+        step={1}
+        value={shown[end]}
+        disabled={rebaking}
+        aria-valuetext={levelLabel(shown[end])}
+        onChange={(e) => move(end, Number(e.target.value))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
+      <span className="level-value">{levelLabel(shown[end])}</span>
+    </label>
+  );
+
+  const filtering = !isFullRange(shown);
+  return (
+    <div className="level-filter" role="group" aria-label="Levels shown">
+      {slider('min', 'Lowest')}
+      {slider('max', 'Highest')}
+      <p className="muted level-note">
+        {filtering
+          ? <>{shown.min === shown.max ? `Only ${levelLabel(shown.min)}` : `${levelLabel(shown.min)} to ${levelLabel(shown.max)}`} at full strength; the rest faded. </>
+          : <>All levels. </>}
+        <kbd>,</kbd> <kbd>.</kbd> step one level{filtering && <>, <kbd>/</kbd> shows all</>}.
+        {filtering && (
+          <button className="link" disabled={rebaking} onClick={() => onLook({ range: FULL_RANGE })}>Show all</button>
+        )}
+      </p>
+    </div>
+  );
+}
+
+export function Sidebar({ doc, visibility, onToggle, onPick, look, onLook, rebaking, rebakeError }: Props) {
   const [query, setQuery] = useState('');
 
   /** Entity counts per prototype, for the summary list. */
@@ -122,8 +182,9 @@ export function Sidebar({ doc, visibility, onToggle, onPick, colourBy, onColourB
           return (
             <div key={l.name}>
               {row}
-              <ColourByControl doc={doc} colourBy={colourBy} onColourBy={onColourBy}
-                recolouring={recolouring} recolourError={recolourError} />
+              <ColourByControl doc={doc} look={look} onLook={onLook} rebaking={rebaking} />
+              <LevelFilter doc={doc} look={look} onLook={onLook} rebaking={rebaking} />
+              {rebakeError && <p className="error-note">{rebakeError}</p>}
             </div>
           );
         })}
@@ -157,7 +218,7 @@ export function Sidebar({ doc, visibility, onToggle, onPick, colourBy, onColourB
 
       <section>
         <h3>Legend</h3>
-        {colourBy === 'height' && (
+        {look.colourBy === 'height' && (
           <div className="legend-group levels">
             <h4>Height above terrain</h4>
             {LEVEL_LEGEND.map((row) => (

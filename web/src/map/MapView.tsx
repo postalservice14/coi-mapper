@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { MapScene } from './scene';
 import type { TileHit } from './scene';
 import type { LayerChunk, LayerName, WorkerDoc } from '../coimap/types';
-import { nextInStack } from '../coimap/stack';
+import { FULL_RANGE, isFullRange, nextInStack, orderForRange } from '../coimap/stack';
+import type { LevelRange } from '../coimap/stack';
+import { BELOW_GROUND, TOP_LEVEL } from '../coimap/levelPalette';
+import type { BuildingsLook } from '../coimap/loader.worker';
 
 interface Props {
   doc: WorkerDoc;
@@ -16,6 +19,21 @@ interface Props {
   focus: { tx: number; ty: number } | null;
   /** A re-baked buildings layer to show in place of the loaded one; null keeps the original. */
   entityChunks: LayerChunk[] | null;
+  /** Levels the map shows at full strength; what it fades ranks below them for picking. */
+  levelRange: LevelRange;
+  /** For the `,` and `.` keys, which step a single-level slice down and up. */
+  onLook: (next: Partial<BuildingsLook>) => void;
+}
+
+/**
+ * The slice one step down or up from `range`. From the full range the first step lands on
+ * the ground, the usual place to start; from a band it collapses onto the band's low end
+ * and moves from there, so the keys always mean "one level".
+ */
+function stepSlice(range: LevelRange, by: number): LevelRange {
+  const from = isFullRange(range) ? 0 - by : range.min;
+  const level = Math.max(BELOW_GROUND, Math.min(TOP_LEVEL, from + by));
+  return { min: level, max: level };
 }
 
 /**
@@ -60,7 +78,7 @@ function readDiagnostics(canvas: HTMLCanvasElement, doc: WorkerDoc): string[] {
 /** Pointer travel, in pixels, above which a press counts as a drag rather than a click. */
 const DRAG_THRESHOLD = 4;
 
-export function MapView({ doc, visibility, selected, onSelect, onHover, focus, entityChunks }: Props) {
+export function MapView({ doc, visibility, selected, onSelect, onHover, focus, entityChunks, levelRange, onLook }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
   const [ready, setReady] = useState(false);
@@ -141,6 +159,15 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus, e
     let moved = 0;
     let last = { x: 0, y: 0 };
 
+    // The scene orders a stack by height alone; under a level filter what the map shows
+    // at full strength comes first, so hover and click land on what is drawn.
+    const hitAt = (x: number, y: number): TileHit | null => {
+      const hit = scene.hitTest(x, y);
+      if (!hit) return null;
+      const stack = orderForRange(doc, hit.stack, hit.tx, hit.ty, levelRange);
+      return { ...hit, stack, entityIndex: stack[0] ?? -1 };
+    };
+
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const { x, y } = local(e);
@@ -168,7 +195,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus, e
         last = p;
       }
 
-      const hit = scene.hitTest(p.x, p.y);
+      const hit = hitAt(p.x, p.y);
       const index = hit?.entityIndex ?? -1;
       if (index !== hoveredRef.current) {
         hoveredRef.current = index;
@@ -185,7 +212,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus, e
       // A press that barely moved is a click, not the end of a pan.
       if (moved <= DRAG_THRESHOLD) {
         const { x, y } = local(e);
-        const hit = scene.hitTest(x, y);
+        const hit = hitAt(x, y);
         if (!hit) { onSelect(-1, null); return; }
         const last = lastClickRef.current;
         const sameTile = last?.tx === hit.tx && last?.ty === hit.ty;
@@ -212,7 +239,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus, e
       canvas.removeEventListener('pointerup', onPointerUp);
       canvas.removeEventListener('pointerleave', onLeave);
     };
-  }, [ready, selected, onSelect, onHover]);
+  }, [ready, selected, onSelect, onHover, doc, levelRange]);
 
   // Keyboard shortcuts: F fits the map, [ and ] turn it, Escape clears the selection.
   useEffect(() => {
@@ -226,10 +253,13 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus, e
       if (e.key === '[') sceneRef.current?.rotateBy(-1);
       if (e.key === ']') sceneRef.current?.rotateBy(1);
       if (e.key === 'Escape') onSelect(-1, null);
+      // Not [ and ]: those turn the map. Comma and full stop sit under < and >.
+      if (doc.hasLevels && (e.key === ',' || e.key === '.')) onLook({ range: stepSlice(levelRange, e.key === '.' ? 1 : -1) });
+      if (doc.hasLevels && e.key === '/' && !isFullRange(levelRange)) onLook({ range: FULL_RANGE });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [ready, onSelect]);
+  }, [ready, onSelect, onLook, doc, levelRange]);
 
   useEffect(() => {
     if (ready) sceneRef.current?.setHighlight(hoveredRef.current, selected);

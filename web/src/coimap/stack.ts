@@ -20,6 +20,7 @@ import type { Entity } from './schema.gen';
 import type { WorkerDoc } from './types';
 import { forEachFootprintTile } from './footprint';
 import { readTile } from './tileInfo';
+import { BELOW_GROUND, TOP_LEVEL } from './levelPalette';
 
 export interface TileIndex {
   /** Tile → index into `entities` of the topmost occupant, or -1 when the tile is empty. */
@@ -38,38 +39,82 @@ export const bottomZ = (entity: Entity, ordinal: number): number =>
  */
 const SUPPORT_PROTOS = new Set(['TransportsPillar', 'TrainTracksPillar']);
 
-export function buildTileIndex(entities: Entity[], width: number, height: number): TileIndex {
+/**
+ * Builds the index. `prefer`, when given, ranks above height: an entity it accepts at a
+ * tile is on top of every one it does not, whatever their Z. That is how the level filter
+ * brings a pipe up from under the belt carried over it — the filter owns the choice, and
+ * height only orders what it leaves in the same class.
+ */
+export function buildTileIndex(
+  entities: Entity[],
+  width: number,
+  height: number,
+  prefer?: (entityIndex: number, tile: number, ordinal: number) => boolean,
+): TileIndex {
   const support = Uint8Array.from(entities, (e) => (SUPPORT_PROTOS.has(e.proto) ? 1 : 0));
   const top = new Int32Array(width * height).fill(-1);
   const topZ = new Int32Array(width * height);            // meaningful only where top >= 0
-  const shared = new Map<number, number[]>();             // tile → flat [entity, z, entity, z, …]
+  const topPref = new Uint8Array(prefer ? width * height : 0);
+  const shared = new Map<number, number[]>();             // tile → flat [entity, z, pref, …]
 
   for (let e = 0; e < entities.length; e++) {
     const entity = entities[e]!;
     forEachFootprintTile(entity, width, height, (tile, _isEdge, ordinal) => {
       const z = bottomZ(entity, ordinal);
+      const pref = prefer?.(e, tile, ordinal) ? 1 : 0;
       const prev = top[tile]!;
       if (prev >= 0 && prev !== e) {
+        const prevPref = prefer ? topPref[tile]! : 0;
         let list = shared.get(tile);
-        if (!list) shared.set(tile, (list = [prev, topZ[tile]!]));
-        list.push(e, z);
-        if (z < topZ[tile]! || (z === topZ[tile] && support[e]! > support[prev]!)) return;
+        if (!list) shared.set(tile, (list = [prev, topZ[tile]!, prevPref]));
+        list.push(e, z, pref);
+        if (pref < prevPref) return;
+        if (pref === prevPref && (z < topZ[tile]! || (z === topZ[tile] && support[e]! > support[prev]!))) return;
       }
       top[tile] = e;
       topZ[tile] = z;
+      if (prefer) topPref[tile] = pref;
     });
   }
 
   const stacks = new Map<number, Int32Array>();
   for (const [tile, flat] of shared) {
     const order: number[] = [];
-    for (let i = 0; i < flat.length; i += 2) order.push(i);
-    // Same rule as `top`: higher first, then anything over a support, then the later-written.
+    for (let i = 0; i < flat.length; i += 3) order.push(i);
+    // Same rule as `top`: preferred first, then higher, then anything over a support, then
+    // the later-written.
     order.sort((a, b) =>
-      flat[b + 1]! - flat[a + 1]! || support[flat[a]!]! - support[flat[b]!]! || flat[b]! - flat[a]!);
+      flat[b + 2]! - flat[a + 2]! || flat[b + 1]! - flat[a + 1]!
+      || support[flat[a]!]! - support[flat[b]!]! || flat[b]! - flat[a]!);
     stacks.set(tile, Int32Array.from(order, (i) => flat[i]!));
   }
   return { top, stacks };
+}
+
+/**
+ * A band of levels, inclusive at both ends. The ends of the scale are open: `min` at
+ * `BELOW_GROUND` takes in everything buried however deep, and `max` at `TOP_LEVEL`
+ * everything lifted however high — the same "and up" the legend's top swatch means.
+ */
+export interface LevelRange { min: number; max: number }
+
+export const FULL_RANGE: LevelRange = { min: BELOW_GROUND, max: TOP_LEVEL };
+
+export const isFullRange = (r: LevelRange): boolean => r.min <= BELOW_GROUND && r.max >= TOP_LEVEL;
+
+/**
+ * Whether one footprint tile reaches into the band, given the ground under it.
+ *
+ * A tile's vertical extent is what counts, not only its bottom: a machine standing on the
+ * ground three levels tall is at level 2 as surely as a belt carried there. A tile with
+ * its own height is a run of transport, one level thick; a filled box spans `z0` to `z1`.
+ */
+export function tileInRange(entity: Entity, ordinal: number, ground: number, range: LevelRange): boolean {
+  const lo = bottomZ(entity, ordinal) - ground;
+  const hi = (ordinal >= 0 && ordinal < entity.tz.length ? lo + 1 : entity.z1 - ground) - 1;
+  const min = range.min <= BELOW_GROUND ? -Infinity : range.min;
+  const max = range.max >= TOP_LEVEL ? Infinity : range.max;
+  return Math.max(lo, hi) >= min && lo <= max;
 }
 
 /** Every entity on a tile, topmost first; empty for bare terrain. */
@@ -92,16 +137,37 @@ export function nextInStack(stack: readonly number[], selected: number, sameTile
   return stack[0] ?? -1;
 }
 
-/** Bottom Z of an entity at one map tile, or its `z0` where it has no per-tile heights. */
-function bottomAt(entity: Entity, tx: number, ty: number): number {
+/** An entity's ordinal for one map tile — its index into `tz` — or -1 for a filled box. */
+function ordinalAt(entity: Entity, tx: number, ty: number): number {
   const tiles = entity.tiles;
   if (entity.tz.length > 0 && tiles) {
     const dx = tx - entity.x, dy = ty - entity.y;
     for (let i = 0; i + 1 < tiles.length; i += 2) {
-      if (tiles[i] === dx && tiles[i + 1] === dy) return bottomZ(entity, i >> 1);
+      if (tiles[i] === dx && tiles[i + 1] === dy) return i >> 1;
     }
   }
-  return entity.z0;
+  return -1;
+}
+
+/** Bottom Z of an entity at one map tile, or its `z0` where it has no per-tile heights. */
+const bottomAt = (entity: Entity, tx: number, ty: number): number => bottomZ(entity, ordinalAt(entity, tx, ty));
+
+/**
+ * A tile's stack in the order the level filter draws it: whatever the filter shows, then
+ * whatever it fades, each part still top-down. The worker ranks the painted raster the
+ * same way, so the entity a click picks is the one the map shows there.
+ */
+export function orderForRange(doc: WorkerDoc, stack: number[], tx: number, ty: number, range: LevelRange): number[] {
+  if (isFullRange(range) || !doc.hasLevels || stack.length < 2) return stack;
+  const ground = readTile(doc, tx, ty).height;
+  if (ground === null) return stack;
+  const g = Math.round(ground);
+  const shown: number[] = [], faded: number[] = [];
+  for (const index of stack) {
+    const entity = doc.entities[index]!;
+    (tileInRange(entity, ordinalAt(entity, tx, ty), g, range) ? shown : faded).push(index);
+  }
+  return [...shown, ...faded];
 }
 
 /**

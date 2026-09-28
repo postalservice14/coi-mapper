@@ -21,6 +21,16 @@ const RISE = ['#184f95', '#256abf', '#3987e5', '#6da7ec', '#9ec5f4', '#cde2fb'];
 /** The highest level with its own colour; everything above shares it. */
 export const TOP_LEVEL = RISE.length;
 
+/** The one stop below the ground: every buried level shares it, as they share a colour. */
+export const BELOW_GROUND = -1;
+
+/** A stop on the level scale as the legend names it. */
+export function levelLabel(level: number): string {
+  if (level <= BELOW_GROUND) return 'Below ground';
+  if (level === 0) return 'Ground';
+  return level >= TOP_LEVEL ? `+${TOP_LEVEL} and up` : `+${level}`;
+}
+
 const rgb = { below: parseHex(BELOW), ground: parseHex(GROUND), rise: RISE.map(parseHex) };
 
 export function levelRgb(level: number): readonly [number, number, number] {
@@ -31,7 +41,7 @@ export function levelRgb(level: number): readonly [number, number, number] {
 
 /** Legend rows, top of the scale first, as the map reads: the highest things stand out. */
 export const LEVEL_LEGEND: { label: string; color: string }[] = [
-  ...RISE.map((color, i) => ({ label: i + 1 === TOP_LEVEL ? `+${i + 1} and up` : `+${i + 1}`, color })).reverse(),
-  { label: 'Ground', color: GROUND },
-  { label: 'Below ground', color: BELOW },
+  ...RISE.map((color, i) => ({ label: levelLabel(i + 1), color })).reverse(),
+  { label: levelLabel(0), color: GROUND },
+  { label: levelLabel(BELOW_GROUND), color: BELOW },
 ];

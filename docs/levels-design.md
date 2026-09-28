@@ -1,6 +1,6 @@
 # Showing levels on a 2D map — design
 
-Status: steps 1 (exporter heights + stacked picking) and 2 (colour by height) are implemented; step 3 is proposed.
+Status: all three steps are implemented — exporter heights with stacked picking, colour by height, and the level filter.
 
 ## Problem
 
@@ -78,10 +78,14 @@ In priority order. Each step ships on its own.
    applies to everything, not only transports, because the elevated rail is as much what
    the view is for as the belts. Over water the terrain is the sea floor, so a level there
    is height above the seabed; the export has no sea level to measure from instead.
-3. **Level range filter + slice.** A two-handle slider (min..max level above ground). A
-   transport tile shows when its level falls in the range, and a building shows when
-   `[z0, z1)` overlaps it. "Slice" is min = max, with everything else ghosted at ~15% alpha
-   and not hidden, so you keep your bearings. Keys `[` / `]` step the slice.
+3. **Level range filter + slice.** Two sliders, Lowest and Highest, over the legend's stops
+   (below ground … +6 and up; the end stops are open, so the full range filters nothing).
+   A transport tile shows when its one-level-thick span falls in the band; a building when
+   `[z0, z1)` overlaps it. Everything outside is faded to ~15% rather than hidden — for the
+   band as well as the slice, one behaviour instead of two. The filter outranks height in
+   the tile index (`buildTileIndex`'s `prefer`), so what it shows is what is painted on top
+   and what a click picks. The slice keys are `,` / `.`, not `[` / `]`: those already turn
+   the map. `/` clears the filter.
 
 ### Rendering cost
 

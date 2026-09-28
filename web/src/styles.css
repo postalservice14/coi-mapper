@@ -280,3 +280,14 @@ dialog.fleet .groupby button.on, .sidebar .groupby button.on {
 .sidebar .colour-by { margin: 2px 0 6px 24px; }
 .sidebar .groupby button:disabled { opacity: 0.45; cursor: default; }
 .error-note { margin: 4px 0 6px 24px; font-size: 12px; color: var(--danger); }
+
+/* The level band, under the colouring: a label, a slider and its value per end. */
+.sidebar .level-filter { margin: 4px 0 8px 24px; }
+.sidebar .level-slider { display: grid; grid-template-columns: 52px 1fr 78px; align-items: center; gap: 6px; font-size: 12px; }
+.sidebar .level-slider input { width: 100%; accent-color: var(--accent); }
+.sidebar .level-value { text-align: right; font-variant-numeric: tabular-nums; }
+.sidebar .level-note { margin: 4px 0 0; font-size: 12px; line-height: 1.5; }
+.sidebar button.link {
+  margin-left: 4px; padding: 0; border: none; background: none;
+  color: var(--accent); font-size: 12px; cursor: pointer;
+}
