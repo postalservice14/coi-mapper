@@ -140,5 +140,14 @@ export function levelSpan(doc: WorkerDoc, entityIndex: number): { min: number; m
   return min <= max ? { min, max } : null;
 }
 
+/**
+ * The ground under every tile as a whole-tile Z, by the rounding `levelAt` uses, so a
+ * level baked into the map and a level shown in the inspector cannot disagree.
+ */
+export function groundLevels(height: Uint16Array, minHeight: number, maxHeight: number): Int16Array {
+  const span = maxHeight - minHeight;
+  return Int16Array.from(height, (v) => Math.round(minHeight + (v / 65535) * span));
+}
+
 /** "+2", "0", "-1": a level reads as an offset from the ground. */
 export const formatLevel = (level: number): string => (level > 0 ? `+${level}` : `${level}`);

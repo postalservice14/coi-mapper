@@ -1,12 +1,50 @@
 import { useMemo, useState } from 'react';
 import type { Entity } from '../coimap/schema.gen';
 import type { LayerName, WorkerDoc } from '../coimap/types';
+import type { ColourBy } from '../coimap/entityRaster';
+import { LEVEL_LEGEND } from '../coimap/levelPalette';
 
 interface Props {
   doc: WorkerDoc;
   visibility: Record<LayerName, boolean>;
   onToggle: (layer: LayerName) => void;
   onPick: (entityIndex: number) => void;
+  colourBy: ColourBy;
+  onColourBy: (mode: ColourBy) => void;
+  /** True while the worker re-bakes the buildings layer for a new colouring. */
+  recolouring: boolean;
+  recolourError: string | null;
+}
+
+/**
+ * The buildings layer's colouring, under its toggle. Height is offered only when the
+ * export carries levels — an older one would colour everything "ground", which is wrong
+ * rather than merely unhelpful.
+ */
+function ColourByControl({ doc, colourBy, onColourBy, recolouring, recolourError }: Pick<Props, 'doc' | 'colourBy' | 'onColourBy' | 'recolouring' | 'recolourError'>) {
+  const option = (mode: ColourBy, label: string, enabled: boolean, title: string) => (
+    <button
+      className={colourBy === mode ? 'on' : undefined}
+      aria-pressed={colourBy === mode}
+      disabled={!enabled || recolouring}
+      title={title}
+      onClick={() => colourBy !== mode && onColourBy(mode)}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <>
+      <div className="groupby colour-by" role="group" aria-label="Colour buildings by">
+        <span className="muted">Colour by</span>
+        {option('category', 'Category', true, 'What each building does')}
+        {option('height', 'Height', doc.hasLevels,
+          doc.hasLevels ? 'Level above the terrain: what is lifted over what' : 'This export carries no heights — re-export with the current mod')}
+        {recolouring && <span className="muted">…</span>}
+      </div>
+      {recolourError && <p className="error-note">{recolourError}</p>}
+    </>
+  );
 }
 
 interface LayerRow {
@@ -33,7 +71,7 @@ const LAYERS: LayerRow[] = [
 
 const MAX_RESULTS = 60;
 
-export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
+export function Sidebar({ doc, visibility, onToggle, onPick, colourBy, onColourBy, recolouring, recolourError }: Props) {
   const [query, setQuery] = useState('');
 
   /** Entity counts per prototype, for the summary list. */
@@ -64,7 +102,7 @@ export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
           // An overlay the export never wrote cannot be shown; say so rather than offering
           // a toggle that silently does nothing.
           const available = l.needs ? l.needs(doc) : true;
-          return (
+          const row = (
             <label
               key={l.name}
               className={`toggle${available ? '' : ' unavailable'}`}
@@ -79,6 +117,14 @@ export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
               <span>{l.label}</span>
               {!available && <span className="muted"> — not exported</span>}
             </label>
+          );
+          if (l.name !== 'entities') return row;
+          return (
+            <div key={l.name}>
+              {row}
+              <ColourByControl doc={doc} colourBy={colourBy} onColourBy={onColourBy}
+                recolouring={recolouring} recolourError={recolourError} />
+            </div>
           );
         })}
       </section>
@@ -111,6 +157,16 @@ export function Sidebar({ doc, visibility, onToggle, onPick }: Props) {
 
       <section>
         <h3>Legend</h3>
+        {colourBy === 'height' && (
+          <div className="legend-group levels">
+            <h4>Height above terrain</h4>
+            {LEVEL_LEGEND.map((row) => (
+              <div key={row.label} className="legend-row">
+                <span className="swatch" style={{ background: row.color }} /> {row.label}
+              </div>
+            ))}
+          </div>
+        )}
         <div className="legend-group">
           <h4>Ground</h4>
           {doc.manifest.surfaces.map((s) => (

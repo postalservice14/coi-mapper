@@ -1,6 +1,6 @@
 # Showing levels on a 2D map — design
 
-Status: step 1 (exporter heights + stacked picking) is implemented; steps 2 and 3 are proposed.
+Status: steps 1 (exporter heights + stacked picking) and 2 (colour by height) are implemented; step 3 is proposed.
 
 ## Problem
 
@@ -70,9 +70,14 @@ In priority order. Each step ships on its own.
    tiles with more than one occupant, sorted top-down. The sidebar lists the whole stack
    (`L2 Flat conveyor / L1 Pipe`). Clicking the same tile again cycles through it. This fixes
    the one-entity-per-tile bug on its own and needs only `tz`.
-2. **Colour by height.** A layer mode that tints transports on a sequential scale by level
-   above ground, baked in the worker like the entity raster. You can read which run is on
-   top without touching a control.
+2. **Colour by height.** A mode of the buildings layer, not a layer: the worker stays
+   alive after the load and re-bakes that one layer on request, and the scene swaps its
+   chunks in place. A separate layer was the first plan and would have cost every layer
+   its resolution on a large map (see *Rendering cost*). The scale is diverging around the
+   ground — grey at 0, blue stepping lighter per level up to "+6 and up", red below — and
+   applies to everything, not only transports, because the elevated rail is as much what
+   the view is for as the belts. Over water the terrain is the sea floor, so a level there
+   is height above the seabed; the export has no sea level to measure from instead.
 3. **Level range filter + slice.** A two-handle slider (min..max level above ground). A
    transport tile shows when its level falls in the range, and a building shows when
    `[z0, z1)` overlaps it. "Slice" is min = max, with everything else ghosted at ~15% alpha
@@ -83,7 +88,7 @@ In priority order. Each step ships on its own.
 Entity rasters are baked once, in the worker, into `ImageBitmap` chunks. The worker is
 terminated after a load (`useCoiMap` spawns a fresh one per load), so filtering needs one of:
 
-- **Re-bake on commit** (recommended to start): keep the worker alive after the load, send
+- **Re-bake on commit** (built for step 2, reused by step 3): keep the worker alive after the load, send
   it the range when the slider is *released* (not on every drag frame), and swap the
   returned bitmaps in. At 26,736 entities the rasterisation is cheap. The texture upload is
   the real cost, and the chunking already bounds it.

@@ -7,7 +7,7 @@
  */
 import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Entity } from '../coimap/schema.gen';
-import type { LayerName, WorkerDoc } from '../coimap/types';
+import type { LayerChunk, LayerName, WorkerDoc } from '../coimap/types';
 import { hasSparseFootprint } from '../coimap/footprint';
 import { stackAt } from '../coimap/stack';
 import { parseHex } from '../coimap/terrain';
@@ -118,6 +118,20 @@ const TRANSPORT_STYLE: Record<string, { color: number; width: number }> = {
 interface GridLevel {
   step: number;
   offset: number;
+}
+
+/** One sprite per chunk, placed in tile units, into a layer's container. */
+function addChunkSprites(container: Container, chunks: LayerChunk[]) {
+  for (const chunk of chunks) {
+    const texture = Texture.from(chunk.bitmap);
+    // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
+    texture.source.scaleMode = 'nearest';
+    const sprite = new Sprite(texture);
+    sprite.position.set(chunk.x, chunk.y);
+    sprite.width = chunk.w;
+    sprite.height = chunk.h;
+    container.addChild(sprite);
+  }
 }
 
 export interface TileHit {
@@ -413,16 +427,7 @@ export class MapScene {
         // One container per layer holding a sprite per chunk, so toggling still works on
         // the layer as a whole.
         const container = new Container();
-        for (const chunk of chunks) {
-          const texture = Texture.from(chunk.bitmap);
-          // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
-          texture.source.scaleMode = 'nearest';
-          const sprite = new Sprite(texture);
-          sprite.position.set(chunk.x, chunk.y);
-          sprite.width = chunk.w;
-          sprite.height = chunk.h;
-          container.addChild(sprite);
-        }
+        addChunkSprites(container, chunks);
         this.sprites.set(name, container);
         this.world.addChild(container);
         debugLog(`scene: uploaded layer "${name}" (${chunks.length} chunks)`);
@@ -787,6 +792,26 @@ export class MapScene {
   }
 
   // ── layers & highlight ────────────────────────────────────────────────────
+  /**
+   * Swaps a raster layer's pixels for a re-baked set, keeping its place in the draw order
+   * and its visibility.
+   *
+   * The old textures are destroyed with their sources and the bitmaps closed, not left for
+   * the collector: each full layer is 55 MB of GPU memory on a large map, and flipping the
+   * colouring back and forth would otherwise stack copies of it until the context is lost.
+   */
+  replaceLayer(name: 'entities', chunks: LayerChunk[]) {
+    const container = this.sprites.get(name);
+    if (!container) return;
+    for (const child of container.removeChildren()) {
+      const sprite = child as Sprite;
+      const bitmap = sprite.texture.source.resource as ImageBitmap | undefined;
+      sprite.destroy({ texture: true, textureSource: true });
+      bitmap?.close?.();
+    }
+    addChunkSprites(container, chunks);
+  }
+
   setLayerVisible(name: LayerName, visible: boolean) {
     const layer = this.sprites.get(name);
     if (!layer) return;

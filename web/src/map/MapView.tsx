@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapScene } from './scene';
 import type { TileHit } from './scene';
-import type { LayerName, WorkerDoc } from '../coimap/types';
+import type { LayerChunk, LayerName, WorkerDoc } from '../coimap/types';
 import { nextInStack } from '../coimap/stack';
 
 interface Props {
@@ -14,6 +14,8 @@ interface Props {
   onHover: (hit: TileHit | null) => void;
   /** Set to a tile to recentre the camera there; used by search results. */
   focus: { tx: number; ty: number } | null;
+  /** A re-baked buildings layer to show in place of the loaded one; null keeps the original. */
+  entityChunks: LayerChunk[] | null;
 }
 
 /**
@@ -58,7 +60,7 @@ function readDiagnostics(canvas: HTMLCanvasElement, doc: WorkerDoc): string[] {
 /** Pointer travel, in pixels, above which a press counts as a drag rather than a click. */
 const DRAG_THRESHOLD = 4;
 
-export function MapView({ doc, visibility, selected, onSelect, onHover, focus }: Props) {
+export function MapView({ doc, visibility, selected, onSelect, onHover, focus, entityChunks }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<MapScene | null>(null);
   const [ready, setReady] = useState(false);
@@ -67,6 +69,9 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
   const hoveredRef = useRef(-1);
   // The tile the last click landed on, so a second click there steps down the stack.
   const lastClickRef = useRef<{ tx: number; ty: number } | null>(null);
+  // The chunks this scene already shows. Swapping in the same set twice would destroy the
+  // bitmaps it is about to draw from, so a repeated effect run has to be a no-op.
+  const appliedChunksRef = useRef<LayerChunk[] | null>(null);
 
   // Build the scene once per document.
   useEffect(() => {
@@ -110,9 +115,17 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
       setReady(false);
       if (scene && onContextLost) scene.canvas.removeEventListener('webglcontextlost', onContextLost);
       sceneRef.current = null;
+      appliedChunksRef.current = null;
       scene?.destroy();
     };
   }, [doc]);
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!ready || !scene || !entityChunks || appliedChunksRef.current === entityChunks) return;
+    scene.replaceLayer('entities', entityChunks);
+    appliedChunksRef.current = entityChunks;
+  }, [ready, entityChunks]);
 
   // Input: wheel to zoom, drag to pan, click to select.
   useEffect(() => {

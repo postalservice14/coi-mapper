@@ -10,6 +10,11 @@ import type { Entity, Proto } from './schema.gen';
 import { parseHex } from './terrain';
 import type { Rgba } from './terrain';
 import { forEachFootprintTile } from './footprint';
+import { bottomZ } from './stack';
+import { levelRgb } from './levelPalette';
+
+/** What the buildings layer is coloured by. */
+export type ColourBy = 'category' | 'height';
 
 /** Per-state appearance: how much the footprint is dimmed, and any tint applied. */
 const STATE_STYLE: Record<string, { alpha: number; tint?: [number, number, number] }> = {
@@ -37,8 +42,17 @@ export function buildEntityTexture(
    * belt carried over a pipe shows as the belt; without it the last entity written wins.
    */
   top?: Int32Array,
+  /**
+   * Colour by level instead of category, given the ground's whole-tile Z per tile. Every
+   * tile is drawn at full strength: the state dimming would read as a different level.
+   */
+  ground?: Int16Array,
 ): Rgba {
   const rgba = new Uint8ClampedArray(width * height * 4);
+  if (ground) {
+    paintLevels(rgba, entities, width, height, ground, top);
+    return rgba;
+  }
 
   for (let n = 0; n < entities.length; n++) {
     const e = entities[n]!;
@@ -67,4 +81,22 @@ export function buildEntityTexture(
   }
 
   return rgba;
+}
+
+function paintLevels(
+  rgba: Rgba, entities: Entity[], width: number, height: number, ground: Int16Array, top?: Int32Array,
+): void {
+  for (let n = 0; n < entities.length; n++) {
+    const e = entities[n]!;
+    forEachFootprintTile(e, width, height, (tile, isEdge, ordinal) => {
+      if (top && top[tile] !== n) return;
+      const [r, g, b] = levelRgb(bottomZ(e, ordinal) - ground[tile]!);
+      const k = isEdge ? EDGE_DARKEN : 1;
+      const o = tile * 4;
+      rgba[o] = r * k;
+      rgba[o + 1] = g * k;
+      rgba[o + 2] = b * k;
+      rgba[o + 3] = 255;
+    });
+  }
 }

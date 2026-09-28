@@ -286,6 +286,38 @@ try {
     await page.locator('input.search').fill('');
   }
 
+  // ── colour by height ────────────────────────────────────────────────────────
+  // A re-bake of the buildings layer in the worker, swapped into the scene. Switching back
+  // must reproduce the original pixels exactly — the proof that the swap freed and rebuilt
+  // the layer rather than drawing the new one over the old.
+  {
+    const canvas = page.locator('canvas.map-canvas');
+    const settle = async () => {
+      await page.waitForFunction(() => !document.querySelector('.colour-by')?.textContent?.includes('…'), null, { timeout: 15000 });
+      await page.waitForTimeout(300);
+    };
+    // Off the canvas first: a hover outline in one shot and not the other is not a repaint.
+    await page.locator('.colour-by button', { hasText: 'Height' }).hover();
+    await page.waitForTimeout(200);
+    const byCategory = await canvas.screenshot();
+    await page.locator('.colour-by button', { hasText: 'Height' }).click();
+    await settle();
+    const byHeight = await canvas.screenshot();
+    const legend = await page.locator('.legend-group.levels .legend-row').allTextContents();
+    check('colouring by height repaints the buildings', !byHeight.equals(byCategory),
+      `${(byCategory.length / 1024).toFixed(0)} KB -> ${(byHeight.length / 1024).toFixed(0)} KB`);
+    check('height legend runs top to below ground',
+      legend.length === 8 && legend[0].trim() === '+6 and up' && legend[6].trim() === 'Ground' && legend[7].trim() === 'Below ground',
+      legend.map((s) => s.trim()).join(' | '));
+    await page.screenshot({ path: `${outDir}/6-height.png` });
+
+    await page.locator('.colour-by button', { hasText: 'Category' }).click();
+    await settle();
+    const back = await canvas.screenshot();
+    check('colouring by category again puts the map back', back.equals(byCategory), back.equals(byCategory) ? 'identical' : 'differs');
+    check('height legend leaves with the mode', (await page.locator('.legend-group.levels').count()) === 0);
+  }
+
   // ── the vehicle census dialog ───────────────────────────────────────────────
   // Sequenced after the rotation checks on purpose: MapView listens for keys on the window,
   // and an open dialog must not let f, [ or ] reach it.

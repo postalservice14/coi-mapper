@@ -14,6 +14,20 @@ misrendering them.
 
 ### Added
 
+- **The buildings layer can be coloured by height** — a "Colour by: Category | Height"
+  switch under the Buildings toggle. Ground level is a recessive grey, each level up a
+  lighter step of blue to "+6 and up", and anything buried below the terrain red, with a
+  legend to match. It is what makes the elevated parts of a base findable at whole-map
+  zoom: on the reference export the raised rail network, the stacker rails and the belts on
+  pillars stand out across the islands where by category they vanish among the buildings.
+  Offered only for exports that carry heights.
+
+  It is a mode of the one layer rather than a layer of its own, re-baked in the loader
+  worker on each switch (about 0.4 s on a 3584x3840 map): a sixth full-map layer would pass
+  the texture budget there and halve the resolution of every layer, height view or not.
+  Over water a level is measured from the sea floor, since that is the terrain the export
+  has, so bridges, docks and cargo depots read higher than they look.
+
 - **Everything stacked on a tile can be picked, not just the last one drawn.** A pipe
   running under a flat conveyor shares its tile, and the map kept one entity per tile — so
   the pipe could not be clicked where they crossed, and which of the two you got depended on

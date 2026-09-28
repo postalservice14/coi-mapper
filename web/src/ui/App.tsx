@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useCoiMap } from '../coimap/useCoiMap';
 import { MapView } from '../map/MapView';
 import type { TileHit } from '../map/scene';
-import type { LayerName } from '../coimap/types';
+import type { LayerChunk, LayerName } from '../coimap/types';
+import type { ColourBy } from '../coimap/entityRaster';
 import { DropZone } from './DropZone';
 import { Sidebar } from './Sidebar';
 import { Inspector } from './Inspector';
@@ -23,7 +24,7 @@ const DEFAULT_VISIBILITY: Record<LayerName, boolean> = {
 };
 
 export function App() {
-  const { doc, error, progress, fileName, load, reset } = useCoiMap();
+  const { doc, error, progress, fileName, load, recolour, reset } = useCoiMap();
   const [visibility, setVisibility] = useState(DEFAULT_VISIBILITY);
   const [selected, setSelected] = useState(-1);
   // Where on the map the selection was clicked. A pipe under a belt shares that tile with
@@ -32,6 +33,34 @@ export function App() {
   const [hit, setHit] = useState<TileHit | null>(null);
   const [focus, setFocus] = useState<{ tx: number; ty: number } | null>(null);
   const [showFleet, setShowFleet] = useState(false);
+
+  // How the buildings layer is coloured, and the re-baked layer that shows it. The mode
+  // flips at once so the control answers the click; the map follows when the worker does.
+  const [colourBy, setColourBy] = useState<ColourBy>('category');
+  const [entityChunks, setEntityChunks] = useState<LayerChunk[] | null>(null);
+  const [recolouring, setRecolouring] = useState(false);
+  const [recolourError, setRecolourError] = useState<string | null>(null);
+  const recolourToken = useRef(0);
+
+  const changeColourBy = useCallback((mode: ColourBy) => {
+    const token = ++recolourToken.current;
+    const previous = colourBy;
+    setColourBy(mode);
+    setRecolouring(true);
+    setRecolourError(null);
+    recolour(mode)
+      .then((chunks) => {
+        // A later click has already asked for something else; these bitmaps are nobody's.
+        if (token !== recolourToken.current) { for (const c of chunks) c.bitmap.close(); return; }
+        setEntityChunks(chunks);
+      })
+      .catch((err: Error) => {
+        if (token !== recolourToken.current) return;
+        setColourBy(previous);
+        setRecolourError(`Could not recolour the map: ${err.message}`);
+      })
+      .finally(() => { if (token === recolourToken.current) setRecolouring(false); });
+  }, [colourBy, recolour]);
 
   const toggle = useCallback((layer: LayerName) => {
     setVisibility((v) => ({ ...v, [layer]: !v[layer] }));
@@ -59,7 +88,11 @@ export function App() {
   }, [doc]);
   useEffect(() => () => { if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl); }, [thumbnailUrl]);
 
-  useEffect(() => { setSelected(-1); setSelectedAt(null); setFocus(null); setShowFleet(false); }, [doc]);
+  useEffect(() => {
+    setSelected(-1); setSelectedAt(null); setFocus(null); setShowFleet(false);
+    recolourToken.current++;
+    setColourBy('category'); setEntityChunks(null); setRecolouring(false); setRecolourError(null);
+  }, [doc]);
 
   if (!doc) return <DropZone onFile={load} progress={progress} error={error} />;
 
@@ -84,7 +117,16 @@ export function App() {
       </header>
 
       <div className="body">
-        <Sidebar doc={doc} visibility={visibility} onToggle={toggle} onPick={pick} />
+        <Sidebar
+          doc={doc}
+          visibility={visibility}
+          onToggle={toggle}
+          onPick={pick}
+          colourBy={colourBy}
+          onColourBy={changeColourBy}
+          recolouring={recolouring}
+          recolourError={recolourError}
+        />
         <main className="stage">
           <MapView
             doc={doc}
@@ -93,6 +135,7 @@ export function App() {
             onSelect={select}
             onHover={setHit}
             focus={focus}
+            entityChunks={entityChunks}
           />
         </main>
         {selected >= 0 && (
