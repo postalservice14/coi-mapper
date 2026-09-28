@@ -147,6 +147,8 @@ kbd {
   background: none; border: none; padding: 4px 6px; text-align: left; border-radius: 4px;
 }
 .results li button:hover { background: var(--panel-2); }
+.results li button.active { background: var(--panel-2); box-shadow: inset 2px 0 0 var(--accent); }
+.stack p { margin: 0 0 4px; font-size: 12px; }
 .counts li { display: flex; align-items: center; gap: 8px; padding: 3px 6px; }
 .counts .num { color: var(--muted); font-variant-numeric: tabular-nums; }
 

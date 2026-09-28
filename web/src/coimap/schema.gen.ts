@@ -215,8 +215,14 @@ export interface Entity {
   /** Rotation, 0-3 (quarter turns clockwise). */
   rot: number;
   state: EntityState;
-  /** Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity fills its w*h box exactly, which is the common case for machines. Conveyors and pipes snake, so their bounding box is mostly empty and this lists the tiles they really cover. */
+  /** Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity fills its w*h box exactly at one height, which is the common case for machines. Conveyors and pipes snake, so their bounding box is mostly empty and this lists the tiles they really cover; a straight belt that ramps lists them too, so `tz` can carry the ramp. */
   tiles: number[];
+  /** Lowest occupied bottom, absolute tile Z (the unit of the height plane). Absent in exports written before levels were. */
+  z0: number;
+  /** Highest occupied top, absolute tile Z, exclusive. */
+  z1: number;
+  /** Bottom Z of each tile in `tiles`, absolute, one per [dx,dy] pair and in the same order — a belt ramps, so one number cannot describe it. The lowest where a tile has several vertical ranges. Empty when `tiles` is, and then `z0` holds for the box. */
+  tz: number[];
 }
 
 export interface Transport {

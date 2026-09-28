@@ -315,8 +315,14 @@ namespace CoiMapper.Schema {
         /// <summary>Rotation, 0-3 (quarter turns clockwise).</summary>
         public int Rot;
         public EntityState State;
-        /// <summary>Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity fills its w*h box exactly, which is the common case for machines. Conveyors and pipes snake, so their bounding box is mostly empty and this lists the tiles they really cover.</summary>
+        /// <summary>Occupied tiles as flat [dx,dy,...] offsets from (x,y). Empty when the entity fills its w*h box exactly at one height, which is the common case for machines. Conveyors and pipes snake, so their bounding box is mostly empty and this lists the tiles they really cover; a straight belt that ramps lists them too, so `tz` can carry the ramp.</summary>
         public int[] Tiles;
+        /// <summary>Lowest occupied bottom, absolute tile Z (the unit of the height plane). Absent in exports written before levels were.</summary>
+        public int Z0;
+        /// <summary>Highest occupied top, absolute tile Z, exclusive.</summary>
+        public int Z1;
+        /// <summary>Bottom Z of each tile in `tiles`, absolute, one per [dx,dy] pair and in the same order — a belt ramps, so one number cannot describe it. The lowest where a tile has several vertical ranges. Empty when `tiles` is, and then `z0` holds for the box.</summary>
+        public int[] Tz;
 
         public void WriteTo(JsonWriter w) {
             w.BeginObject();
@@ -329,6 +335,9 @@ namespace CoiMapper.Schema {
             w.Name("rot").Value(Rot);
             w.Name("state").Value(State.ToString());
             w.Name("tiles").BeginArray(); foreach (var v in Tiles ?? new int[0]) { w.Value(v); } w.EndArray();
+            w.Name("z0").Value(Z0);
+            w.Name("z1").Value(Z1);
+            w.Name("tz").BeginArray(); foreach (var v in Tz ?? new int[0]) { w.Value(v); } w.EndArray();
             w.EndObject();
         }
     }

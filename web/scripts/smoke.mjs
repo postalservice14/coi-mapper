@@ -234,6 +234,58 @@ try {
     await page.screenshot({ path: `${outDir}/4-inspector.png` });
   }
 
+  // ── stacked picking ─────────────────────────────────────────────────────────
+  // The fixture's one flat conveyor ramps two levels over a pipe. Selecting it from search
+  // centres the camera on it; zoom in there, then hover out from the centre until the
+  // status bar reports something underneath — that is the crossing tile.
+  await page.locator('input.search').fill('Flat Conveyor');
+  await page.waitForTimeout(200);
+  await page.locator('.results li button').first().click();
+  await page.waitForSelector('.inspector', { timeout: 5000 });
+  {
+    const box = await page.locator('canvas.map-canvas').boundingBox();
+    const cx = box.x + box.width / 2, cy = box.y + box.height / 2;
+    await page.mouse.move(cx, cy);
+    for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, -400); await page.waitForTimeout(60); }
+
+    let spot = null;
+    scan: for (let r = 0; r <= 90; r += 6) {
+      for (let dy = -r; dy <= r; dy += 6) {
+        for (let dx = -r; dx <= r; dx += 6) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;   // ring by ring, nearest first
+          await page.mouse.move(cx + dx, cy + dy);
+          if (await page.locator('.statusbar .stacked').count()) { spot = { x: cx + dx, y: cy + dy }; break scan; }
+        }
+      }
+    }
+    const statusText = spot ? await page.locator('.statusbar').textContent() : '';
+    check('status bar names what is underneath', !!spot && /Flat Conveyor\s\+2.*over Pipe/.test(statusText), statusText.trim());
+
+    if (spot) {
+      await page.mouse.click(spot.x, spot.y);
+      await page.waitForTimeout(150);
+      const first = await page.locator('.inspector h2').textContent();
+      const rows = await page.locator('.inspector .stack li').allTextContents();
+      check('a click takes the top of the stack', first === 'Flat Conveyor', first ?? '');
+      check('inspector lists the stack top-down',
+        rows.length === 2 && /Flat Conveyor\s*\+2/.test(rows[0]) && /Pipe\s*\+1/.test(rows[1]), rows.join(' | '));
+      const level = await page.locator('.inspector .row', { hasText: 'Level' }).textContent();
+      check('a ramp reports its level here and its span', /\+2 here · ramps 0 to \+2/.test(level ?? ''), level ?? '(no row)');
+
+      await page.mouse.click(spot.x, spot.y);
+      await page.waitForTimeout(150);
+      const second = await page.locator('.inspector h2').textContent();
+      await page.mouse.click(spot.x, spot.y);
+      await page.waitForTimeout(150);
+      const third = await page.locator('.inspector h2').textContent();
+      check('clicking again steps down the stack and wraps', second === 'Pipe' && third === 'Flat Conveyor',
+        `${first} -> ${second} -> ${third}`);
+      await page.screenshot({ path: `${outDir}/5-stack.png` });
+    }
+    // The selection stays: the dialog checks below need one to prove Escape leaves it be.
+    await page.locator('input.search').fill('');
+  }
+
   // ── the vehicle census dialog ───────────────────────────────────────────────
   // Sequenced after the rotation checks on purpose: MapView listens for keys on the window,
   // and an open dialog must not let f, [ or ] reach it.

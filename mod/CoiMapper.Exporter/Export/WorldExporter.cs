@@ -234,25 +234,45 @@ namespace CoiMapper.Export {
             int h = maxY - minY + 1;
 
             // Distinct tiles, since a layout can list several entries per tile (different
-            // vertical extents), and a duplicate would misreport a solid footprint.
-            var covered = new HashSet<int>();
+            // vertical extents), and a duplicate would misreport a solid footprint. Each keeps
+            // the lowest bottom among its entries, and the whole entity its vertical span.
+            // Heights are relative to the entity's own Z, which a belt ramping away from its
+            // centre makes negative as readily as positive.
+            var covered = new Dictionary<int, int>();
+            int minFrom = int.MaxValue, maxTop = int.MinValue;
             for (int i = 0; i < occupied.Length; i++) {
-                covered.Add((occupied[i].RelativeY - minY) * w + (occupied[i].RelativeX - minX));
+                int cell = (occupied[i].RelativeY - minY) * w + (occupied[i].RelativeX - minX);
+                int from = occupied[i].RelativeFrom;
+                int top = from + occupied[i].VerticalSizeRaw;
+                if (from < minFrom) minFrom = from;
+                if (top > maxTop) maxTop = top;
+                int lowest;
+                if (!covered.TryGetValue(cell, out lowest) || from < lowest) covered[cell] = from;
             }
 
-            int[] tiles;
-            if (covered.Count >= w * h) {
-                tiles = Empty;                      // fills its box: the box says it all
-            } else {
-                tiles = new int[covered.Count * 2];
-                int t = 0;
-                foreach (int cell in covered) {
-                    tiles[t++] = cell % w;
-                    tiles[t++] = cell / w;
-                }
+            // A straight belt fills its box but may still ramp, and the box alone would flatten
+            // it to one height. Only an entity that is both solid and level drops its list.
+            bool level = true;
+            foreach (var bottom in covered.Values) {
+                if (bottom != minFrom) { level = false; break; }
             }
 
             var centre = entity.CenterTile;
+            int[] tiles, tz;
+            if (covered.Count >= w * h && level) {
+                tiles = Empty;                      // fills its box at one height: the box says it all
+                tz = Empty;
+            } else {
+                tiles = new int[covered.Count * 2];
+                tz = new int[covered.Count];
+                int t = 0;
+                foreach (var cell in covered) {
+                    tiles[t * 2] = cell.Key % w;
+                    tiles[t * 2 + 1] = cell.Key / w;
+                    tz[t++] = centre.Z + cell.Value;
+                }
+            }
+
             return new SchemaEntity {
                 Id = entity.Id.Value,
                 Proto = entity.Prototype.Id.Value,
@@ -265,6 +285,9 @@ namespace CoiMapper.Export {
                 Rot = 0,
                 State = MapState(entity),
                 Tiles = tiles,
+                Z0 = centre.Z + minFrom,
+                Z1 = centre.Z + maxTop,
+                Tz = tz,
             };
         }
 

@@ -1,4 +1,5 @@
 import { readTile } from '../coimap/tileInfo';
+import { formatLevel, levelAt } from '../coimap/stack';
 import type { TileHit } from '../map/scene';
 import type { WorkerDoc } from '../coimap/types';
 
@@ -23,6 +24,10 @@ export function StatusBar({ doc, hit }: { doc: WorkerDoc; hit: TileHit | null })
 
   const tile = readTile(doc, hit.tx, hit.ty);
   const entity = hit.entityIndex >= 0 ? doc.entities[hit.entityIndex] : undefined;
+  const level = entity ? levelAt(doc, hit.entityIndex, hit.tx, hit.ty) : null;
+  // What the top entity hides. Named when it is one thing, counted beyond that.
+  const below = hit.stack.slice(1);
+  const under = below[0] !== undefined ? doc.entities[below[0]] : undefined;
 
   return (
     <footer className="statusbar">
@@ -37,6 +42,13 @@ export function StatusBar({ doc, hit }: { doc: WorkerDoc; hit: TileHit | null })
         <>
           <span className="sep">·</span>
           <strong>{doc.protos[entity.proto]?.name ?? entity.proto}</strong>
+          {level !== null && <span className="muted">&nbsp;{formatLevel(level)}</span>}
+          {under && (
+            <span className="muted stacked">
+              &nbsp;over {doc.protos[under.proto]?.name ?? under.proto}
+              {below.length > 1 && ` +${below.length - 1} more`}
+            </span>
+          )}
         </>
       )}
       <span className="grow" />

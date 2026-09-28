@@ -10,12 +10,15 @@ import type { Entity } from './schema.gen';
  *
  * `isEdge` marks the border of a filled box, used to outline adjacent machines. Explicit
  * tile lists are already thin, so nothing is treated as an edge there.
+ *
+ * `ordinal` is the tile's position in the explicit list — the index into `tz` — or -1 for
+ * a filled box, whose tiles all share `z0`.
  */
 export function forEachFootprintTile(
   entity: Entity,
   width: number,
   height: number,
-  visit: (tileIndex: number, isEdge: boolean) => void,
+  visit: (tileIndex: number, isEdge: boolean, ordinal: number) => void,
 ): void {
   const tiles = entity.tiles;
 
@@ -24,7 +27,7 @@ export function forEachFootprintTile(
       const tx = entity.x + tiles[i]!;
       const ty = entity.y + tiles[i + 1]!;
       if (tx < 0 || ty < 0 || tx >= width || ty >= height) continue;
-      visit(ty * width + tx, false);
+      visit(ty * width + tx, false, i >> 1);
     }
     return;
   }
@@ -35,7 +38,7 @@ export function forEachFootprintTile(
     const onEdgeY = ty === entity.y || ty === y1 - 1;
     const row = ty * width;
     for (let tx = Math.max(0, entity.x); tx < x1; tx++) {
-      visit(row + tx, onEdgeY || tx === entity.x || tx === x1 - 1);
+      visit(row + tx, onEdgeY || tx === entity.x || tx === x1 - 1, -1);
     }
   }
 }

@@ -91,16 +91,28 @@ namespace CoiMapper.SchemaCheck {
             };
 
             var entities = new List<Entity> {
-                new Entity { Id = 1, Proto = "Furnace", X = 4, Y = 4, W = 3, H = 3, Rot = 0, State = EntityState.Operating },
-                new Entity { Id = 2, Proto = "Storage", X = 10, Y = 6, W = 4, H = 4, Rot = 1, State = EntityState.Constructing },
-                // Non-ASCII and quote characters must survive JSON escaping.
-                new Entity { Id = 3, Proto = "Pump \"A\" — ünïcode", X = 20, Y = 12, W = 2, H = 3, Rot = 3, State = EntityState.Broken },
+                new Entity { Id = 1, Proto = "Furnace", X = 4, Y = 4, W = 3, H = 3, Rot = 0, State = EntityState.Operating, Z0 = 10, Z1 = 16 },
+                new Entity { Id = 2, Proto = "Storage", X = 10, Y = 6, W = 4, H = 4, Rot = 1, State = EntityState.Constructing, Z0 = 10, Z1 = 14 },
+                // Non-ASCII and quote characters must survive JSON escaping. Below sea level
+                // on purpose: absolute Z is signed, and a writer that clamped it would lose it.
+                new Entity { Id = 3, Proto = "Pump \"A\" — ünïcode", X = 20, Y = 12, W = 2, H = 3, Rot = 3, State = EntityState.Broken, Z0 = -2, Z1 = 1 },
                 // A snaking conveyor: a large bounding box covering only an L-shaped path.
-                // Emitting the box instead would paint a 10x8 slab over unrelated tiles.
+                // Emitting the box instead would paint a 10x8 slab over unrelated tiles. It
+                // ramps from Z 10 up to 12, so a per-tile height lost in transit shows.
                 new Entity {
                     Id = 4, Proto = "ConveyorT2", X = 30, Y = 20, W = 10, H = 8, Rot = 0,
                     State = EntityState.Operating,
                     Tiles = new[] { 0, 0, 1, 0, 2, 0, 3, 0, 3, 1, 3, 2, 3, 3, 4, 3, 5, 3, 6, 3, 7, 3, 8, 3, 9, 3 },
+                    Z0 = 10, Z1 = 13,
+                    Tz = new[] { 10, 10, 10, 10, 11, 12, 12, 12, 12, 12, 12, 12, 12 },
+                },
+                // A straight, level pipe passing under the belt's raised end at (36, 23), one
+                // level below it. It fills its 1x5 box, so like the exporter it ships no tile
+                // list and z0 stands for every tile. Written after the belt, so a consumer
+                // that keeps the last-written entity per tile wrongly picks the pipe.
+                new Entity {
+                    Id = 5, Proto = "PipeT1", X = 36, Y = 21, W = 1, H = 5, Rot = 0,
+                    State = EntityState.Operating, Z0 = 11, Z1 = 12,
                 },
             };
 

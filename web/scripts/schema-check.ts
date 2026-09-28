@@ -7,7 +7,8 @@
  * escaping, enum encoding, plane byte order, or row-major convention.
  */
 import { readFileSync } from 'node:fs';
-import { parseCoiMap, buildTileIndex } from '../src/coimap/parse.ts';
+import { parseCoiMap } from '../src/coimap/parse.ts';
+import { buildTileIndex } from '../src/coimap/stack.ts';
 import { buildTextures } from '../src/coimap/terrain.ts';
 import { readTile } from '../src/coimap/tileInfo.ts';
 
@@ -31,12 +32,12 @@ check('game info survives', doc.manifest.game.mapName === 'Schema Check' && doc.
 check('float round-trip', doc.manifest.map.minHeight === -12.5 && doc.manifest.map.maxHeight === 240.25,
   `${doc.manifest.map.minHeight} … ${doc.manifest.map.maxHeight}`);
 
-check('entities decoded', doc.entities.length === 4, doc.entities.length);
+check('entities decoded', doc.entities.length === 5, doc.entities.length);
 
 // Sparse footprints: the conveyor must cover only its 13 traced tiles, not its 10x8 box.
 const belt = doc.entities.find((e) => e.proto === 'ConveyorT2');
 check('sparse footprint survives', belt?.tiles?.length === 26, `${(belt?.tiles?.length ?? 0) / 2} tiles`);
-const beltIndex = buildTileIndex(doc.entities, width, height);
+const { top: beltIndex, stacks } = buildTileIndex(doc.entities, width, height);
 const beltAt = (x: number, y: number) => beltIndex[y * width + x] === doc.entities.indexOf(belt!);
 check(
   'sparse footprint is not rasterised as its box',
@@ -44,9 +45,28 @@ check(
   'traced tiles set, interior of the box left clear',
 );
 
+// Levels: absolute Z must survive signed and per tile, in the order of `tiles`.
+check('levels survive', doc.hasLevels && belt?.z0 === 10 && belt?.z1 === 13 && doc.entities[2]?.z0 === -2,
+  `belt ${belt?.z0}..${belt?.z1}, pump z0 ${doc.entities[2]?.z0}`);
+check('per-tile heights follow the tile list',
+  belt?.tz.length === 13 && belt.tz[0] === 10 && belt.tz[4] === 11 && belt.tz[12] === 12,
+  belt?.tz.join(','));
+const pipe = doc.entities.find((e) => e.proto === 'PipeT1');
+check('a level box ships no per-tile heights', pipe?.tz.length === 0 && pipe?.tiles.length === 0 && pipe?.z0 === 11,
+  `tz ${pipe?.tz.length}, z0 ${pipe?.z0}`);
+
+// The pipe is written after the belt but runs a level under it at (36, 23). The belt must
+// be on top there, the stack must hold both top-down, and elsewhere the pipe is alone.
+const crossing = stacks.get(23 * width + 36);
+check('crossing stacks top-down',
+  crossing?.length === 2 && crossing[0] === doc.entities.indexOf(belt!) && crossing[1] === doc.entities.indexOf(pipe!)
+    && beltAt(36, 23),
+  crossing ? Array.from(crossing, (i) => doc.entities[i]!.proto).join(' over ') : '(no stack)');
+check('only the crossing is stacked', stacks.size === 1, `${stacks.size} stacked tiles`);
+
 // Enums must arrive as the schema's string names, not integers.
 const states = doc.entities.map((e) => e.state).join(',');
-check('enums encoded as names', states === 'Operating,Constructing,Broken,Operating', states);
+check('enums encoded as names', states === 'Operating,Constructing,Broken,Operating,Operating', states);
 
 // JSON escaping of quotes, em dash and diacritics.
 const unicode = doc.entities[2]?.proto;
@@ -232,7 +252,7 @@ check('network edge decoded',
   doc.edges.length === 1 && doc.edges[0]!.kind === 'Electricity' && doc.edges[0]!.a === 1, doc.edges[0]?.kind);
 
 // The renderer must accept this document, not just the parser.
-const index = buildTileIndex(doc.entities, width, height);
+const { top: index } = buildTileIndex(doc.entities, width, height);
 check('tile index built', index[4 * width + 4] === 0 && index[0] === -1, `entity 0 at (4,4)`);
 
 const textures = buildTextures(doc.planes, doc.manifest);

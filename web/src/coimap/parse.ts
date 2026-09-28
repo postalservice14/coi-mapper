@@ -5,7 +5,6 @@ import { unzipSync } from 'fflate';
 import { MEMBERS, PLANES, SCHEMA_VERSION } from './schema.gen';
 import type { Manifest, Entity, Transport, NetworkEdge, Proto, PlaneName, Networks } from './schema.gen';
 import type { Planes } from './types';
-import { forEachFootprintTile } from './footprint';
 
 const decoder = new TextDecoder();
 const json = <T>(bytes: Uint8Array): T => JSON.parse(decoder.decode(bytes)) as T;
@@ -48,7 +47,31 @@ export interface ParsedArchive {
   edges: NetworkEdge[];
   protos: Record<string, Proto>;
   planes: Planes;
+  /** False for an export written before entities carried heights; see `normaliseLevels`. */
+  hasLevels: boolean;
   thumbnail?: Uint8Array;
+}
+
+/**
+ * Fills in the height fields an export written before levels existed lacks, and reports
+ * whether any were there to begin with.
+ *
+ * Not a schema bump, for the reason the census and zone fields in `parseCoiMap` are not. The zeroes keep
+ * every reader total — the stack index then orders by write order, as it always did — and
+ * the flag is what stops the UI presenting those zeroes as "on the ground".
+ */
+function normaliseLevels(entities: Entity[]): boolean {
+  let hasLevels = false;
+  for (const e of entities) {
+    if (typeof e.z0 === 'number') {
+      hasLevels = true;
+    } else {
+      e.z0 = 0;
+      e.z1 = 0;
+    }
+    if (!e.tz) e.tz = [];
+  }
+  return hasLevels;
 }
 
 export function parseCoiMap(archive: Uint8Array): ParsedArchive {
@@ -120,26 +143,17 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
     : { transports: [], edges: [] };
 
   const protoList = files[MEMBERS.protos] ? json<Proto[]>(files[MEMBERS.protos]!) : [];
+  const entities = files[MEMBERS.entities] ? json<Entity[]>(files[MEMBERS.entities]!) : [];
+  const hasLevels = normaliseLevels(entities);
 
   return {
     manifest,
-    entities: files[MEMBERS.entities] ? json<Entity[]>(files[MEMBERS.entities]!) : [],
+    entities,
     transports: networks.transports ?? [],
     edges: networks.edges ?? [],
     protos: Object.fromEntries(protoList.map((p) => [p.id, p])),
     planes,
+    hasLevels,
     thumbnail: files[MEMBERS.thumbnail],
   };
-}
-
-/**
- * Builds the tile → entity lookup used for hit-testing.
- * Values are indices into `entities`; -1 means the tile is empty.
- */
-export function buildTileIndex(entities: Entity[], width: number, height: number): Int32Array {
-  const index = new Int32Array(width * height).fill(-1);
-  for (let e = 0; e < entities.length; e++) {
-    forEachFootprintTile(entities[e]!, width, height, (tile) => { index[tile] = e; });
-  }
-  return index;
 }

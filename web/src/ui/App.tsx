@@ -26,6 +26,9 @@ export function App() {
   const { doc, error, progress, fileName, load, reset } = useCoiMap();
   const [visibility, setVisibility] = useState(DEFAULT_VISIBILITY);
   const [selected, setSelected] = useState(-1);
+  // Where on the map the selection was clicked. A pipe under a belt shares that tile with
+  // it, and the inspector lists the whole stack there; null for a search pick.
+  const [selectedAt, setSelectedAt] = useState<{ tx: number; ty: number } | null>(null);
   const [hit, setHit] = useState<TileHit | null>(null);
   const [focus, setFocus] = useState<{ tx: number; ty: number } | null>(null);
   const [showFleet, setShowFleet] = useState(false);
@@ -34,8 +37,14 @@ export function App() {
     setVisibility((v) => ({ ...v, [layer]: !v[layer] }));
   }, []);
 
+  const select = useCallback((index: number, at: { tx: number; ty: number } | null) => {
+    setSelected(index);
+    setSelectedAt(index >= 0 ? at : null);
+  }, []);
+
   const pick = useCallback((index: number) => {
     setSelected(index);
+    setSelectedAt(null);
     if (index >= 0 && doc) {
       const e = doc.entities[index]!;
       setFocus({ tx: e.x + e.w / 2, ty: e.y + e.h / 2 });
@@ -50,7 +59,7 @@ export function App() {
   }, [doc]);
   useEffect(() => () => { if (thumbnailUrl) URL.revokeObjectURL(thumbnailUrl); }, [thumbnailUrl]);
 
-  useEffect(() => { setSelected(-1); setFocus(null); setShowFleet(false); }, [doc]);
+  useEffect(() => { setSelected(-1); setSelectedAt(null); setFocus(null); setShowFleet(false); }, [doc]);
 
   if (!doc) return <DropZone onFile={load} progress={progress} error={error} />;
 
@@ -81,12 +90,14 @@ export function App() {
             doc={doc}
             visibility={visibility}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={select}
             onHover={setHit}
             focus={focus}
           />
         </main>
-        {selected >= 0 && <Inspector doc={doc} selected={selected} onClose={() => setSelected(-1)} />}
+        {selected >= 0 && (
+          <Inspector doc={doc} selected={selected} at={selectedAt} onSelect={select} onClose={() => select(-1, null)} />
+        )}
       </div>
 
       <StatusBar doc={doc} hit={hit} />

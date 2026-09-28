@@ -14,6 +14,21 @@ misrendering them.
 
 ### Added
 
+- **Everything stacked on a tile can be picked, not just the last one drawn.** A pipe
+  running under a flat conveyor shares its tile, and the map kept one entity per tile — so
+  the pipe could not be clicked where they crossed, and which of the two you got depended on
+  export order. Clicking a tile now takes whatever is on top, and clicking it again steps
+  down through the stack and wraps. The inspector lists the whole stack at the clicked tile
+  with each entry's level, and the status bar says what the hovered entity is over
+  ("Flat conveyor +2 over Pipe"). The reference export has over 52,000 such tiles.
+
+  Levels come from a new per-entity height the exporter now writes: `z0`/`z1` for the span,
+  and `tz` — the bottom of each tile — because a belt ramps and one number cannot describe
+  it. A level is shown as tiles above the terrain at that tile. The schema version is not
+  bumped: an export from before this reads as before, with stacks in write order and no
+  level shown anywhere rather than a false "on the ground". Buildings paint under whatever
+  is carried over them, so the map shows the belt at a crossing rather than the pipe.
+
 - **A count of every vehicle and train car, behind a "Vehicles" button in the header.** The
   export had no fleet data at all: vehicles are *dynamic* entities, and the exporter's walk
   is over `IStaticEntity`, so trucks and excavators were invisible to it by construction —

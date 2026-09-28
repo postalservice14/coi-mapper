@@ -9,6 +9,7 @@ import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
 import type { Entity } from '../coimap/schema.gen';
 import type { LayerName, WorkerDoc } from '../coimap/types';
 import { hasSparseFootprint } from '../coimap/footprint';
+import { stackAt } from '../coimap/stack';
 import { parseHex } from '../coimap/terrain';
 
 const MAX_ZOOM = 48;         // screen pixels per tile
@@ -122,8 +123,10 @@ interface GridLevel {
 export interface TileHit {
   tx: number;
   ty: number;
-  /** Index into `doc.entities`, or -1 for bare terrain. */
+  /** Index into `doc.entities` of the topmost occupant, or -1 for bare terrain. */
   entityIndex: number;
+  /** Everything on the tile, topmost first — more than one where a pipe runs under a belt. */
+  stack: number[];
 }
 
 /**
@@ -622,14 +625,15 @@ export class MapScene {
   }
 
   // ── picking ───────────────────────────────────────────────────────────────
-  /** Resolves a screen position to a tile and whatever entity occupies it. */
+  /** Resolves a screen position to a tile and whatever entities occupy it. */
   hitTest(screenX: number, screenY: number): TileHit | null {
     const { width, height } = this.doc.manifest.map;
     const p = this.screenToWorld(screenX, screenY);
     const tx = Math.floor(p.x);
     const ty = Math.floor(p.y);
     if (tx < 0 || ty < 0 || tx >= width || ty >= height) return null;
-    return { tx, ty, entityIndex: this.doc.tileToEntity[ty * width + tx]! };
+    const stack = stackAt(this.doc, ty * width + tx);
+    return { tx, ty, entityIndex: stack[0] ?? -1, stack };
   }
 
   // ── grid ──────────────────────────────────────────────────────────────────

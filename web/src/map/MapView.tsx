@@ -2,13 +2,15 @@ import { useEffect, useRef, useState } from 'react';
 import { MapScene } from './scene';
 import type { TileHit } from './scene';
 import type { LayerName, WorkerDoc } from '../coimap/types';
+import { nextInStack } from '../coimap/stack';
 
 interface Props {
   doc: WorkerDoc;
   /** Which layers are switched on, keyed by layer name. */
   visibility: Record<LayerName, boolean>;
   selected: number;
-  onSelect: (entityIndex: number) => void;
+  /** `at` is the tile clicked, or null when the selection did not come from the map. */
+  onSelect: (entityIndex: number, at: { tx: number; ty: number } | null) => void;
   onHover: (hit: TileHit | null) => void;
   /** Set to a tile to recentre the camera there; used by search results. */
   focus: { tx: number; ty: number } | null;
@@ -63,6 +65,8 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
   const [failure, setFailure] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<string[]>([]);
   const hoveredRef = useRef(-1);
+  // The tile the last click landed on, so a second click there steps down the stack.
+  const lastClickRef = useRef<{ tx: number; ty: number } | null>(null);
 
   // Build the scene once per document.
   useEffect(() => {
@@ -168,7 +172,12 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
       // A press that barely moved is a click, not the end of a pan.
       if (moved <= DRAG_THRESHOLD) {
         const { x, y } = local(e);
-        onSelect(scene.hitTest(x, y)?.entityIndex ?? -1);
+        const hit = scene.hitTest(x, y);
+        if (!hit) { onSelect(-1, null); return; }
+        const last = lastClickRef.current;
+        const sameTile = last?.tx === hit.tx && last?.ty === hit.ty;
+        lastClickRef.current = { tx: hit.tx, ty: hit.ty };
+        onSelect(nextInStack(hit.stack, selected, sameTile), { tx: hit.tx, ty: hit.ty });
       }
     };
 
@@ -203,7 +212,7 @@ export function MapView({ doc, visibility, selected, onSelect, onHover, focus }:
       if (e.key === 'f' || e.key === 'F') sceneRef.current?.fitToMap();
       if (e.key === '[') sceneRef.current?.rotateBy(-1);
       if (e.key === ']') sceneRef.current?.rotateBy(1);
-      if (e.key === 'Escape') onSelect(-1);
+      if (e.key === 'Escape') onSelect(-1, null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

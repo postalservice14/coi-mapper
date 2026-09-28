@@ -5,7 +5,8 @@
  * Textures are converted to `ImageBitmap` here too — bitmaps are transferable and can be
  * uploaded to the GPU directly, so the main thread never touches raw pixels.
  */
-import { parseCoiMap, buildTileIndex, CoiMapError } from './parse';
+import { parseCoiMap, CoiMapError } from './parse';
+import { buildTileIndex } from './stack';
 import { buildTextures } from './terrain';
 import { buildEntityTexture } from './entityRaster';
 import type { LayerChunk, LoadProgress, WorkerDoc } from './types';
@@ -138,13 +139,14 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
 
     stage(`parsed: ${width}x${height} tiles, ${parsed.entities.length} entities`);
     report({ stage: 'indexing', detail: `${parsed.entities.length.toLocaleString()} entities` });
-    const tileToEntity = buildTileIndex(parsed.entities, width, height);
+    const { top: tileToEntity, stacks: tileStacks } = buildTileIndex(parsed.entities, width, height);
+    stage(`${tileStacks.size.toLocaleString()} tiles hold more than one entity`);
 
     stage('indexed; rasterising layers');
     report({ stage: 'rendering', detail: `${width}x${height} tiles` });
     const rasters = {
       ...buildTextures(parsed.planes, parsed.manifest),
-      entities: buildEntityTexture(parsed.entities, parsed.protos, width, height),
+      entities: buildEntityTexture(parsed.entities, parsed.protos, width, height, tileToEntity),
     };
 
     // Only upload layers that have something to draw; a null raster means the export
@@ -172,6 +174,8 @@ self.onmessage = async (event: MessageEvent<LoaderRequest>) => {
       protos: parsed.protos,
       planes: parsed.planes,
       tileToEntity,
+      tileStacks,
+      hasLevels: parsed.hasLevels,
       layers,
       textureScale: factor,
       thumbnail: parsed.thumbnail,

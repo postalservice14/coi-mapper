@@ -52,6 +52,8 @@ function fbm(seed, octaves = 5) {
 // ── terrain ──────────────────────────────────────────────────────────────────
 const SURFACE = { Ocean: 0, Sand: 1, Grass: 2, Rock: 3, Snow: 4 };
 const SEA_LEVEL = 0.42;
+/** World height, in tiles, of the highest point; the height plane spans 0 to this. */
+const MAX_HEIGHT = 200;
 
 /** Legend for the surface plane. */
 const SURFACES = [
@@ -213,6 +215,7 @@ const PROTOS = [
   ['SettlementHouse',  'Settlement',  4, 4], ['Farm',           'Farming',     6, 6],
   ['ForestryTower',    'Farming',     3, 3], ['TruckDepot',     'Transport',   5, 4],
   ['ConveyorBelt',     'Transport',   1, 1], ['Pipe',           'Fluid',       1, 1],
+  ['FlatConveyor',     'Transport',   1, 1],
 ].map(([id, category, w, h]) => ({
   id, category, w, h,
   name: id.replace(/([a-z])([A-Z])/g, '$1 $2'),
@@ -220,7 +223,7 @@ const PROTOS = [
 }));
 
 const byId = Object.fromEntries(PROTOS.map((p) => [p.id, p]));
-const BUILDABLE = PROTOS.filter((p) => !['ConveyorBelt', 'Pipe', 'Pylon'].includes(p.id));
+const BUILDABLE = PROTOS.filter((p) => !['ConveyorBelt', 'Pipe', 'FlatConveyor', 'Pylon'].includes(p.id));
 const STATES = ['Operating', 'Operating', 'Operating', 'Idle', 'Constructing', 'Paused', 'Broken'];
 
 /** Walks a flat [x0,y0,x1,y1,...] polyline into the distinct tiles it passes through. */
@@ -252,7 +255,24 @@ function tracePolyline(points) {
  */
 function placeEntities(size, terrain, seed) {
   const rnd = mulberry32(seed + 31337);
-  const { elevation } = terrain;
+  const { elevation, height } = terrain;
+
+  // Absolute tile Z of the ground, read back from the quantised height plane the way the
+  // app reads it, so a level computed in the browser comes out exactly as placed here.
+  const groundZ = (tile) => Math.round((height[tile] / 65535) * MAX_HEIGHT);
+
+  // A run of tiles at a level above the ground — per tile, like the exporter writes it,
+  // since the ground under a long run is not flat.
+  const lift = (entity, levels) => {
+    entity.tz = [];
+    for (let k = 0; k < entity.tiles.length / 2; k++) {
+      const tile = (entity.y + entity.tiles[2 * k + 1]) * size + entity.x + entity.tiles[2 * k];
+      entity.tz.push(groundZ(tile) + (typeof levels === 'number' ? levels : levels[k]));
+    }
+    entity.z0 = Math.min(...entity.tz);
+    entity.z1 = Math.max(...entity.tz) + 1;
+    return entity;
+  };
   const occupancy = new Uint8Array(size * size);
   const designation = new Uint8Array(size * size);
   const entities = [];
@@ -284,7 +304,12 @@ function placeEntities(size, terrain, seed) {
     const [w, h] = rot % 2 ? [proto.h, proto.w] : [proto.w, proto.h];
     if (!buildable(x, y, w, h)) return null;
     occupy(x, y, w, h);
-    const e = { id: nextId++, proto: proto.id, x, y, w, h, rot, state: STATES[Math.floor(rnd() * STATES.length)] };
+    // Machines stand on the ground and are a few tiles tall; the box stands for every tile.
+    const z0 = groundZ(y * size + x);
+    const e = {
+      id: nextId++, proto: proto.id, x, y, w, h, rot, state: STATES[Math.floor(rnd() * STATES.length)],
+      z0, z1: z0 + 3, tz: [],
+    };
     entities.push(e);
     return e;
   };
@@ -345,7 +370,7 @@ function placeEntities(size, terrain, seed) {
       }
       const tiles = [];
       for (const [tx, ty] of traced) tiles.push(tx - minX, ty - minY);
-      entities.push({
+      entities.push(lift({
         id: nextId++,
         proto: isPipe ? 'Pipe' : 'ConveyorBelt',
         x: minX,
@@ -355,7 +380,7 @@ function placeEntities(size, terrain, seed) {
         rot: 0,
         state: 'Operating',
         tiles,
-      });
+      }, 0));
       for (const [tx, ty] of traced) occupancy[ty * size + tx] = 1;
     }
 
@@ -405,8 +430,10 @@ function placeEntities(size, terrain, seed) {
     const tiles = [];
     for (const [tx, ty] of traced) tiles.push(tx - minX, ty - minY);
 
+    // Raised over everything, as long hauls are in the game: where one crosses a cluster
+    // it stacks over the machines and belts there rather than hiding among them.
     const isPipe = rnd() < 0.3;
-    entities.push({
+    entities.push(lift({
       id: nextId++,
       proto: isPipe ? 'Pipe' : 'ConveyorBelt',
       x: minX, y: minY,
@@ -415,7 +442,7 @@ function placeEntities(size, terrain, seed) {
       rot: 0,
       state: 'Operating',
       tiles,
-    });
+    }, 4));
     transports.push({
       id: nextId++,
       proto: isPipe ? 'Pipe' : 'ConveyorBelt',
@@ -433,7 +460,33 @@ function placeEntities(size, terrain, seed) {
     if (p) edges.push({ kind: 'Electricity', a: p.id, b: hub.id });
   }
 
+  placeCrossing();
   return { entities, transports, edges, occupancy, designation };
+
+  /**
+   * One deterministic crossing the smoke test can find by name: a flat conveyor that ramps
+   * up two levels and back down, with a pipe passing under its raised middle one level up.
+   * The pipe is written after the belt, so an index that kept the last entity per tile
+   * would put it on top.
+   */
+  function placeCrossing() {
+    const SPAN = 11, REACH = 4;
+    for (const t of landTiles) {
+      const x0 = t % size, cy = (t / size) | 0;
+      if (!buildable(x0, cy - REACH, SPAN, 2 * REACH + 1)) continue;
+      occupy(x0, cy - REACH, SPAN, 2 * REACH + 1);
+
+      const belt = { id: nextId++, proto: 'FlatConveyor', x: x0, y: cy, w: SPAN, h: 1, rot: 0, state: 'Operating', tiles: [] };
+      for (let i = 0; i < SPAN; i++) belt.tiles.push(i, 0);
+      entities.push(lift(belt, [0, 1, 2, 2, 2, 2, 2, 2, 2, 1, 0]));
+
+      const pipe = { id: nextId++, proto: 'Pipe', x: x0 + 5, y: cy - REACH, w: 1, h: 2 * REACH + 1, rot: 0, state: 'Operating', tiles: [] };
+      for (let j = 0; j <= 2 * REACH; j++) pipe.tiles.push(0, j);
+      entities.push(lift(pipe, 1));
+      return;
+    }
+    throw new Error('no flat land left for the crossing');
+  }
 }
 
 // ── paving ───────────────────────────────────────────────────────────────────
@@ -571,7 +624,7 @@ const manifest = {
   generator: 'make-fixture.mjs (synthetic)',
   generatedAt: new Date(0).toISOString(),
   game: { version: '0.8.2c', saveVersion: 287, mapName: `Synthetic Isles (${size}×${size})` },
-  map: { width: size, height: size, minHeight: 0, maxHeight: 200 },
+  map: { width: size, height: size, minHeight: 0, maxHeight: MAX_HEIGHT },
   planes,
   surfaces: SURFACES,
   tileSurfaces: TILE_SURFACES,

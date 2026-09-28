@@ -32,10 +32,16 @@ export function buildEntityTexture(
   protos: Record<string, Proto>,
   width: number,
   height: number,
+  /**
+   * The topmost entity per tile. Where tiles are shared, only the one on top paints, so a
+   * belt carried over a pipe shows as the belt; without it the last entity written wins.
+   */
+  top?: Int32Array,
 ): Rgba {
   const rgba = new Uint8ClampedArray(width * height * 4);
 
-  for (const e of entities) {
+  for (let n = 0; n < entities.length; n++) {
+    const e = entities[n]!;
     const proto = protos[e.proto];
     const base = parseHex(proto?.color ?? CATEGORY_COLORS.Other!);
     const style = STATE_STYLE[e.state] ?? DEFAULT_STYLE;
@@ -50,6 +56,7 @@ export function buildEntityTexture(
     const alpha = Math.round(style.alpha * 255);
 
     forEachFootprintTile(e, width, height, (tile, isEdge) => {
+      if (top && top[tile] !== n) return;
       const k = isEdge ? EDGE_DARKEN : 1;
       const o = tile * 4;
       rgba[o] = r * k;

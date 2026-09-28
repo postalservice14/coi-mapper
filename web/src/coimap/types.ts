@@ -43,10 +43,14 @@ export interface WorkerDoc {
   protos: Record<string, Proto>;
   planes: Planes;
   /**
-   * Tile index → index into `entities`, or -1 when the tile is empty.
-   * The grid makes hit-testing a single array lookup; no spatial tree is needed.
+   * Tile index → index into `entities` of the topmost occupant, or -1 when the tile is
+   * empty. The grid makes hit-testing a single array lookup; no spatial tree is needed.
    */
   tileToEntity: Int32Array;
+  /** Tiles holding more than one entity → all of them, topmost first. See `stack.ts`. */
+  tileStacks: Map<number, Int32Array>;
+  /** False for an export that predates entity heights; levels are then unknown, not 0. */
+  hasLevels: boolean;
   layers: MapLayers;
   /** 1 when rasters are full resolution; higher when downsampled to fit GPU memory. */
   textureScale: number;

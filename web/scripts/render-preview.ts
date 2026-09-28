@@ -5,7 +5,8 @@
  *   cd web && node scripts/render-preview.ts ../samples/fixture.coimap /tmp/preview
  */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { parseCoiMap, buildTileIndex } from '../src/coimap/parse.ts';
+import { parseCoiMap } from '../src/coimap/parse.ts';
+import { buildTileIndex } from '../src/coimap/stack.ts';
 import { buildTextures } from '../src/coimap/terrain.ts';
 // @ts-expect-error - plain JS dev tool, no type declarations
 import { encodePng } from '../../samples/png.mjs';
@@ -21,12 +22,13 @@ console.log(`  entities ${parsed.entities.length}  transports ${parsed.transport
 const t0 = performance.now();
 const textures = buildTextures(parsed.planes, parsed.manifest);
 const t1 = performance.now();
-const index = buildTileIndex(parsed.entities, width, height);
+const { top: index, stacks } = buildTileIndex(parsed.entities, width, height);
 const t2 = performance.now();
 
 console.log(`  buildTextures  ${(t1 - t0).toFixed(1)} ms`);
 console.log(`  buildTileIndex ${(t2 - t1).toFixed(1)} ms`);
 console.log(`  occupied tiles ${index.reduce((n, v) => n + (v >= 0 ? 1 : 0), 0).toLocaleString()}`);
+console.log(`  stacked tiles  ${stacks.size.toLocaleString()}`);
 
 /**
  * Mirrors a texture top to bottom, as the scene does when it draws.
