@@ -4,135 +4,31 @@
  * The world is measured in tiles — one world unit per tile — so camera scale reads
  * directly as "screen pixels per tile", which is what the zoom UI and the
  * label/outline thresholds care about.
+ *
+ * The scene owns the camera and the layer registry; the drawing lives beside it — the grid
+ * in `grid.ts`, zones, transports, power and the highlight in `overlays.ts`, raster chunk
+ * sprites in `layers.ts`, and the `?debug=1` logging in `diagnostics.ts`. Those modules
+ * take world rects and a zoom, never screen positions: converting between the two stays
+ * here, in `screenToWorld` and `placeWorldPointAt`, so rotation cannot be got wrong twice.
  */
-import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js';
-import type { Entity } from '../coimap/schema.gen';
+import { Application, Container, Graphics } from 'pixi.js';
 import type { LayerChunk, LayerName, WorkerDoc } from '../coimap/types';
-import { hasSparseFootprint } from '../coimap/footprint';
 import { stackAt } from '../coimap/stack';
-import { parseHex } from '../coimap/terrain';
+import { addDebugProbe, debugLog, logCapabilities, logRenderState, safeResolution } from './diagnostics';
+import { drawGrid } from './grid';
+import type { TileRect } from './grid';
+import { addChunkSprites, replaceChunkSprites } from './layers';
+import { buildPower, buildTransports, drawHighlight, drawZones } from './overlays';
 
 const MAX_ZOOM = 48;         // screen pixels per tile
 const MIN_ZOOM_FACTOR = 0.6; // relative to the fit-to-screen scale
 const ZOOM_PER_WHEEL_LINE = 1.0015;
 
-/**
- * Largest canvas backing-store edge we will ask for.
- *
- * A renderbuffer bigger than the driver's limit does not fail politely — the context is
- * simply lost. 4096 is the smallest limit still in the wild, and on a 2x display a window
- * wider than 2048 CSS pixels crosses it, which is an ordinary maximised window.
- */
-const MAX_BACKING_EDGE = 4096;
-
-/** True when the page was opened with ?safe=1. */
-const isSafeMode = () => new URLSearchParams(location.search).get('safe') === '1';
-
-/** True when the page was opened with ?debug=1. Gates all diagnostic logging. */
-const isDebug = () => new URLSearchParams(location.search).get('debug') === '1';
-
-/** Diagnostic logging, silent unless ?debug=1. */
-const debugLog = (...args: unknown[]) => {
-  if (isDebug()) console.info('[coi-mapper]', ...args);
-};
-
-/** Device pixel ratio that keeps the backing store inside {@link MAX_BACKING_EDGE}. */
-function safeResolution(width: number, height: number): number {
-  if (isSafeMode()) return 1;
-  const wanted = Math.min(window.devicePixelRatio || 1, 2);
-  const longest = Math.max(width, height, 1);
-  return Math.min(wanted, MAX_BACKING_EDGE / longest);
-}
 /** Fraction of the viewport the map occupies when fitted. */
 const FIT_MARGIN = 0.96;
 
 /** Zoom at which individual footprints get outlines drawn over the raster layer. */
 export const OUTLINE_ZOOM = 6;
-
-/**
- * Tile grid overlay, matched to the game's own terrain grid.
- *
- * Three nested levels: a line per tile, a stronger one every 16 tiles, and the heavy dark one
- * every 128 — eight 16-cells — so zooming into one 16-cell shows the 16x16 tiles inside it.
- *
- * The steps are fixed. Nothing scales them with the camera; instead each level fades on its
- * own on-screen spacing, dropping the tile lines first, then the 16s, leaving the 128s.
- */
-const GRID_TILE_TILES = 1;
-const GRID_MINOR_TILES = 16;
-const GRID_MAJOR_TILES = 128;
-/**
- * Where the heavy grid starts, in tiles, relative to tile (0,0).
- *
- * Zero: the grid is aligned to the map origin. Map sizes are whole multiples of 128 — 3584 is
- * 28 and 3840 is 30 — so the heavy lines meet the map edges exactly. An earlier build drew
- * this level every 96 tiles, which does not divide 3584, and the resulting drift looked like a
- * misplaced grid rather than a wrong step; the knob is kept so that is cheap to test again.
- *
- * If it ever is non-zero, note that a negative Y moves lines *down* the screen: the map is
- * drawn mirrored (see setZoom).
- */
-const GRID_MAJOR_OFFSET_TILES = 0;
-/** Each level fades in across this band of on-screen spacing, in pixels. */
-const GRID_TILE_FADE_PX = { from: 6, to: 14 };
-const GRID_MINOR_FADE_PX = { from: 9, to: 26 };
-const GRID_COLOR = 0x000000;
-const GRID_TILE_ALPHA = 0.16;
-const GRID_MINOR_ALPHA = 0.4;
-const GRID_MAJOR_ALPHA = 0.8;
-/**
- * Heavy lines thin out as they crowd, rather than changing step or disappearing.
- *
- * On a 3584x3840 export the 128-tile lines land about 26px apart when the whole map is on
- * screen, and at full strength that is a black mesh over the entire base. Fading them keeps
- * the steps the game's while leaving the map readable at any zoom.
- */
-const GRID_MAJOR_TIGHT_SPACING_PX = 20;
-const GRID_MAJOR_CLEAR_SPACING_PX = 60;
-const GRID_MAJOR_FAINT_ALPHA = 0.18;
-
-/**
- * How heavily a zone washes the terrain under it, and how thick its boundary is in screen
- * pixels.
- *
- * The wash is deliberately light. Zones can be large and can overlap the deposit and
- * designation overlays, and the layer has to leave all of that readable — its job is to
- * say where a boundary falls, not to recolour the map.
- */
-const ZONE_FILL_ALPHA = 0.16;
-const ZONE_EDGE_PX = 2;
-
-/** Packs "#rrggbb" into the 0xrrggbb Pixi wants, borrowing the raster parser's fallback. */
-function zoneColor(hex: string): number {
-  const [r, g, b] = parseHex(hex);
-  return (r << 16) | (g << 8) | b;
-}
-
-const TRANSPORT_STYLE: Record<string, { color: number; width: number }> = {
-  Conveyor: { color: 0xf0d878, width: 0.55 },
-  Pipe: { color: 0x63c8e0, width: 0.55 },
-  Unknown: { color: 0xcccccc, width: 0.45 },
-};
-
-/** One level of the grid: how often its lines fall, and where they start. */
-interface GridLevel {
-  step: number;
-  offset: number;
-}
-
-/** One sprite per chunk, placed in tile units, into a layer's container. */
-function addChunkSprites(container: Container, chunks: LayerChunk[]) {
-  for (const chunk of chunks) {
-    const texture = Texture.from(chunk.bitmap);
-    // Nearest-neighbour keeps tile edges crisp instead of smearing when zoomed in.
-    texture.source.scaleMode = 'nearest';
-    const sprite = new Sprite(texture);
-    sprite.position.set(chunk.x, chunk.y);
-    sprite.width = chunk.w;
-    sprite.height = chunk.h;
-    container.addChild(sprite);
-  }
-}
 
 export interface TileHit {
   tx: number;
@@ -141,32 +37,6 @@ export interface TileHit {
   entityIndex: number;
   /** Everything on the tile, topmost first — more than one where a pipe runs under a belt. */
   stack: number[];
-}
-
-/**
- * Logs renderer capabilities as soon as the context exists.
- *
- * This runs before anything that could hang or lose the context, so the numbers are in the
- * console either way — which the failure banner cannot promise, since a blocked main thread
- * never paints it.
- */
-function logCapabilities(app: Application, canvas: HTMLCanvasElement, host: HTMLElement) {
-  if (!isDebug()) return;
-  try {
-    const gl = (canvas.getContext('webgl2') ?? canvas.getContext('webgl')) as WebGLRenderingContext | null;
-    const info = gl?.getExtension('WEBGL_debug_renderer_info');
-    console.info('[coi-mapper] renderer:', {
-      renderer: gl && info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : 'unknown',
-      maxTexture: gl?.getParameter(gl.MAX_TEXTURE_SIZE),
-      maxRenderbuffer: gl?.getParameter(gl.MAX_RENDERBUFFER_SIZE),
-      host: `${host.clientWidth}x${host.clientHeight}`,
-      backing: `${canvas.width}x${canvas.height}`,
-      resolution: app.renderer.resolution,
-      dpr: window.devicePixelRatio,
-    });
-  } catch (err) {
-    console.warn('[coi-mapper] renderer: capability query failed', err);
-  }
 }
 
 export class MapScene {
@@ -281,112 +151,6 @@ export class MapScene {
     this.observer.observe(this.host);
   }
 
-  /**
-   * Reports what the renderer actually produced.
-   *
-   * "Nothing visible" has several very different causes — textures that never uploaded,
-   * sprites sized or positioned outside the view, or a draw that happened but produced the
-   * clear colour. This distinguishes them by reading pixels back straight after a render,
-   * before the drawing buffer is swapped.
-   */
-  private logRenderState() {
-    if (!isDebug()) return;
-    try {
-      const layers: Record<string, unknown> = {};
-      for (const [name, container] of this.sprites) {
-        if (!(container instanceof Container) || container.children.length === 0) continue;
-        const first = container.children[0] as Sprite;
-        const bounds = container.getBounds();
-        layers[name] = {
-          children: container.children.length,
-          visible: container.visible,
-          texture: first?.texture ? `${first.texture.width}x${first.texture.height}` : 'none',
-          spriteSize: first ? `${first.width}x${first.height}` : 'none',
-          screenBounds: `${Math.round(bounds.x)},${Math.round(bounds.y)} ${Math.round(bounds.width)}x${Math.round(bounds.height)}`,
-        };
-      }
-
-      this.app.render();
-
-      // Sample the middle of the canvas immediately after rendering: the drawing buffer is
-      // still intact within this task, so a uniform result means nothing was drawn there.
-      let sample = 'unavailable';
-      const gl = (this.app.renderer as unknown as { gl?: WebGL2RenderingContext }).gl;
-      if (gl) {
-        const size = 32;
-        const px = new Uint8Array(size * size * 4);
-        const cx = Math.max(0, Math.floor((this.app.renderer.width - size) / 2));
-        const cy = Math.max(0, Math.floor((this.app.renderer.height - size) / 2));
-        gl.readPixels(cx, cy, size, size, gl.RGBA, gl.UNSIGNED_BYTE, px);
-        const seen = new Set<number>();
-        for (let i = 0; i < px.length; i += 4) seen.add((px[i]! << 16) | (px[i + 1]! << 8) | px[i + 2]!);
-        const first = [...seen].slice(0, 3).map((c) => `#${c.toString(16).padStart(6, '0')}`);
-        sample = `${seen.size} distinct colours ${first.join(' ')}`;
-      }
-
-      // Flattened to plain lines: nested objects are collapsed by most console capture,
-      // and a flat log is easier to copy out of DevTools when reporting a problem.
-      const lines = [
-        `renderer type ${this.app.renderer.type}, canvas ${this.app.renderer.width}x${this.app.renderer.height}`,
-        `world scale ${this.world.scale.x.toFixed(4)} at ${Math.round(this.world.x)},${Math.round(this.world.y)}, ` +
-          `${this.app.stage.children.length} stage children`,
-        `centre sample: ${sample}`,
-      ];
-      for (const [name, info] of Object.entries(layers)) {
-        lines.push(`layer ${name}: ${JSON.stringify(info)}`);
-      }
-      for (const line of lines) debugLog(`draw: ${line}`);
-      this.logPresentation();
-    } catch (err) {
-      console.warn('[coi-mapper] draw: state query failed', err);
-    }
-  }
-
-  /**
-   * Reports whether the canvas is actually on screen.
-   *
-   * A correct frame in the drawing buffer still shows nothing if the canvas is hidden,
-   * zero-sized, covered by another element, or never presented because the ticker is not
-   * running. Those are invisible to any check that only inspects the renderer.
-   */
-  private logPresentation() {
-    if (!isDebug()) return;
-    try {
-      const canvas = this.app.canvas as HTMLCanvasElement;
-      const rect = canvas.getBoundingClientRect();
-      const style = getComputedStyle(canvas);
-
-      console.info(
-        `[coi-mapper] present: rect ${Math.round(rect.width)}x${Math.round(rect.height)} at ` +
-          `${Math.round(rect.left)},${Math.round(rect.top)}; display=${style.display} ` +
-          `visibility=${style.visibility} opacity=${style.opacity} zIndex=${style.zIndex} ` +
-          `transform=${style.transform}`,
-      );
-
-      // What the browser thinks is on top at the canvas's centre. Anything other than the
-      // canvas itself is covering the map.
-      const topmost = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-      const describe = (el: Element | null) =>
-        el ? `${el.tagName.toLowerCase()}${el.className ? '.' + String(el.className).split(' ').join('.') : ''}` : 'nothing';
-      debugLog(`present: topmost element at canvas centre is ${describe(topmost)}`);
-
-      // Is the render loop actually producing frames, or did only the manual render run?
-      let frames = 0;
-      const count = () => { frames++; };
-      this.app.ticker.add(count);
-      setTimeout(() => {
-        // The scene may already have been destroyed — StrictMode tears one down within
-        // milliseconds — in which case the ticker is gone and there is nothing to report.
-        const ticker = this.app?.ticker;
-        if (!ticker) return;
-        ticker.remove(count);
-        debugLog(`present: ticker started=${ticker.started}, ${frames} frames in 1s`);
-      }, 1000);
-    } catch (err) {
-      console.warn('[coi-mapper] present: query failed', err);
-    }
-  }
-
   /** Matches the renderer to a new host size, preserving the centred world point. */
   private applySize(width: number, height: number) {
     if (width < 1 || height < 1) return;
@@ -402,7 +166,7 @@ export class MapScene {
       this.fitted = true;
       this.fitToMap();
       debugLog(`scene: fitted at zoom ${this.zoom.toFixed(4)} — map is live`);
-      this.logRenderState();
+      logRenderState(this.app, this.world, this.sprites);
       return;
     }
     // Afterwards, hold the centred world point steady so opening a panel does not
@@ -435,22 +199,16 @@ export class MapScene {
       if (name === 'entities') {
         // Zones go under the transport and power lines: they are an area wash, and a wash
         // painted over a 0.28-tile conveyor line is what makes one hard to follow.
+        const transports = buildTransports(this.doc.transports);
+        const power = buildPower(this.doc.entities, this.doc.edges);
         this.sprites.set('zones', this.zones);
-        this.world.addChild(this.zones, this.buildTransports(), this.buildPower());
+        this.sprites.set('transports', transports);
+        this.sprites.set('power', power);
+        this.world.addChild(this.zones, transports, power);
       }
     }
 
-    if (new URLSearchParams(location.search).get('debug') === '1') {
-      // A texture-free shape covering the map. If this is visible but the layers are not,
-      // the camera is fine and the problem is in the textures.
-      const { width, height } = this.doc.manifest.map;
-      const probe = new Graphics()
-        .rect(0, 0, width, height)
-        .fill({ color: 0xff00ff, alpha: 0.35 })
-        .stroke({ width: Math.max(2, width / 200), color: 0x00ffff });
-      this.world.addChildAt(probe, 0);
-      console.info('[coi-mapper] debug: vector probe added over the map bounds');
-    }
+    addDebugProbe(this.world, this.doc.manifest.map.width, this.doc.manifest.map.height);
 
     // The grid sits over the data layers, as it does in the game, so you can see how a
     // building straddles a cell. The highlight goes above it so selection stays legible.
@@ -458,38 +216,6 @@ export class MapScene {
     this.world.addChild(this.grid);
     this.world.addChild(this.highlight);
     this.app.stage.addChild(this.world);
-  }
-
-  private buildTransports(): Graphics {
-    const g = new Graphics();
-    for (const t of this.doc.transports) {
-      const pts = t.points;
-      if (pts.length < 4) continue;
-      g.moveTo(pts[0]! + 0.5, pts[1]! + 0.5);
-      for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i]! + 0.5, pts[i + 1]! + 0.5);
-      const style = TRANSPORT_STYLE[t.kind] ?? TRANSPORT_STYLE.Unknown!;
-      g.stroke({ width: style.width, color: style.color, alpha: 0.95, cap: 'round', join: 'round' });
-    }
-    this.sprites.set('transports', g);
-    return g;
-  }
-
-  private buildPower(): Graphics {
-    const g = new Graphics();
-    const byId = new Map<number, Entity>(this.doc.entities.map((e) => [e.id, e]));
-    const center = (e: Entity) => [e.x + e.w / 2, e.y + e.h / 2] as const;
-
-    for (const edge of this.doc.edges) {
-      const a = byId.get(edge.a);
-      const b = byId.get(edge.b);
-      if (!a || !b) continue;
-      const [ax, ay] = center(a);
-      const [bx, by] = center(b);
-      g.moveTo(ax, ay).lineTo(bx, by);
-    }
-    g.stroke({ width: 0.28, color: 0xffd76a, alpha: 0.5 });
-    this.sprites.set('power', g);
-    return g;
   }
 
   // ── camera ────────────────────────────────────────────────────────────────
@@ -641,31 +367,16 @@ export class MapScene {
     return { tx, ty, entityIndex: stack[0] ?? -1, stack };
   }
 
-  // ── grid ──────────────────────────────────────────────────────────────────
+  // ── camera-drawn overlays ─────────────────────────────────────────────────
   /**
-   * Redraws the tile grid for the current camera.
+   * The whole tiles on screen, clamped to the map, or null when none are.
    *
-   * Only the lines inside the viewport are emitted. Spanning the whole map would be
-   * thousands of segments on a large export — 7,400 on a 3584x3840 one — where culling
-   * to the viewport caps it in the low hundreds, cheap enough to redraw on every pan.
+   * The bounding box of the viewport's corners, which keeps it right under rotation; at
+   * exact quarter turns the box is tight, so nothing extra gets drawn.
    */
-  private drawGrid() {
-    const g = this.grid;
-    const canvas = this.app.canvas as HTMLCanvasElement;
-    g.clear();
-    if (!g.visible) {
-      canvas.dataset.gridStep = 'off';
-      return;
-    }
-
+  private visibleTiles(): TileRect | null {
     const { width: mapW, height: mapH } = this.doc.manifest.map;
     const { width: sw, height: sh } = this.app.screen;
-    const zoom = this.zoom;
-
-    // The visible world rect, clamped to the map. Lines outside it cost the same to
-    // draw as lines inside it and are never seen.
-    // Taking the bounding box of the viewport's corners keeps this right under rotation,
-    // and at exact quarter turns the box is tight, so nothing extra gets drawn.
     const corners = [
       this.screenToWorld(0, 0),
       this.screenToWorld(sw, 0),
@@ -674,142 +385,36 @@ export class MapScene {
     ];
     const xs = corners.map((c) => c.x);
     const ys = corners.map((c) => c.y);
-    const x0 = Math.max(0, Math.floor(Math.min(...xs)));
-    const y0 = Math.max(0, Math.floor(Math.min(...ys)));
-    const x1 = Math.min(mapW, Math.ceil(Math.max(...xs)));
-    const y1 = Math.min(mapH, Math.ceil(Math.max(...ys)));
-    if (!(x1 > x0 && y1 > y0)) {
-      canvas.dataset.gridStep = 'off';
-      return;
-    }
-
-    // Stroke widths are world units, so divide by zoom to pin them to screen pixels.
-    const px = 1 / zoom;
-
-    // Each level fades on its own on-screen spacing rather than on zoom: spacing is what
-    // decides whether lines read as a grid or as a grey wash, and the same zoom means very
-    // different spacing at each step.
-    const fade = (spacing: number, band: { from: number; to: number }) =>
-      Math.max(0, Math.min(1, (spacing - band.from) / (band.to - band.from)));
-
-    const tileAlpha = GRID_TILE_ALPHA * fade(zoom, GRID_TILE_FADE_PX);
-    const minorAlpha = GRID_MINOR_ALPHA * fade(GRID_MINOR_TILES * zoom, GRID_MINOR_FADE_PX);
-
-    const tiles = { step: GRID_TILE_TILES, offset: 0 };
-    const minor = { step: GRID_MINOR_TILES, offset: 0 };
-    const major = { step: GRID_MAJOR_TILES, offset: GRID_MAJOR_OFFSET_TILES };
-
-    // Every level skips the lines the level above already owns, so a shared line is drawn
-    // once at its strongest weight instead of being painted over.
-    if (tileAlpha > 0.01) this.strokeGridLines(tiles, minor, x0, y0, x1, y1, px, tileAlpha);
-    if (minorAlpha > 0.01) this.strokeGridLines(minor, major, x0, y0, x1, y1, px, minorAlpha);
-
-    const majorRamp = Math.max(0, Math.min(1,
-      (GRID_MAJOR_TILES * zoom - GRID_MAJOR_TIGHT_SPACING_PX)
-      / (GRID_MAJOR_CLEAR_SPACING_PX - GRID_MAJOR_TIGHT_SPACING_PX)));
-    this.strokeGridLines(major, null, x0, y0, x1, y1, 2 * px,
-      GRID_MAJOR_FAINT_ALPHA + (GRID_MAJOR_ALPHA - GRID_MAJOR_FAINT_ALPHA) * majorRamp);
-
-    // The finest level actually on screen, so a test can tell the states apart.
-    const finest = tileAlpha > 0.01 ? GRID_TILE_TILES
-      : minorAlpha > 0.01 ? GRID_MINOR_TILES : GRID_MAJOR_TILES;
-    canvas.dataset.gridStep = String(finest);
+    const rect = {
+      x0: Math.max(0, Math.floor(Math.min(...xs))),
+      y0: Math.max(0, Math.floor(Math.min(...ys))),
+      x1: Math.min(mapW, Math.ceil(Math.max(...xs))),
+      y1: Math.min(mapH, Math.ceil(Math.max(...ys))),
+    };
+    return rect.x1 > rect.x0 && rect.y1 > rect.y0 ? rect : null;
   }
 
-  /**
-   * Strokes one level of the grid across the visible rect.
-   *
-   * `owner` is the level above, whose lines this one leaves alone: a line belonging to the
-   * heavy pass drawn twice would darken unevenly rather than cleanly. Both levels carry an
-   * offset so the grid can be shifted off the map origin without the ownership test drifting
-   * out of step with what is actually drawn.
-   */
-  private strokeGridLines(
-    level: GridLevel, owner: GridLevel | null,
-    x0: number, y0: number, x1: number, y1: number,
-    width: number, alpha: number,
-  ) {
+  /** Redraws the tile grid for the current camera, and reports its finest step. */
+  private drawGrid() {
     const g = this.grid;
-    // First line of `level` at or after `v0`, and whether `v` is one of `owner`'s.
-    const start = (v0: number) =>
-      Math.ceil((v0 - level.offset) / level.step) * level.step + level.offset;
-    const ownedBy = (v: number) =>
-      owner !== null && (((v - owner.offset) % owner.step) + owner.step) % owner.step === 0;
-
-    for (let x = start(x0); x <= x1; x += level.step) {
-      if (ownedBy(x)) continue;
-      g.moveTo(x, y0);
-      g.lineTo(x, y1);
-    }
-    for (let y = start(y0); y <= y1; y += level.step) {
-      if (ownedBy(y)) continue;
-      g.moveTo(x0, y);
-      g.lineTo(x1, y);
-    }
-    g.stroke({ width, color: GRID_COLOR, alpha, alignment: 0.5 });
+    const canvas = this.app.canvas as HTMLCanvasElement;
+    g.clear();
+    // Culled to the viewport, so it is drawn for one camera and skipped while hidden.
+    const view = g.visible ? this.visibleTiles() : null;
+    canvas.dataset.gridStep = view ? drawGrid(g, view, this.zoom) : 'off';
   }
 
-  // ── logistics zones ───────────────────────────────────────────────────────
-  /**
-   * Draws each zone the player drew: its own colour, washed over the area and drawn round
-   * the boundary.
-   *
-   * Redrawn on every camera change rather than built once, for the outline. A stroke width
-   * is in world units, so a fixed one is a hairline at whole-map zoom and a fat band close
-   * in; dividing by the zoom pins it to screen pixels, the same trick the grid and the
-   * selection highlight use. The fill would not need this — only the stroke does — but a
-   * Graphics is cleared and rebuilt as a whole, so they go together.
-   *
-   * Cheap enough to do that with: a world holds a handful of zones of a few vertices each,
-   * which is why this needs none of the viewport culling the grid cannot do without.
-   *
-   * Vertices are tile coordinates and the world is in tiles, so they go in untransformed —
-   * including under rotation, which is a property of the camera and not of the geometry.
-   */
+  /** Redraws the zones, whose outline width is pinned to screen pixels. */
   private drawZones() {
-    const g = this.zones;
-    g.clear();
-    if (!g.visible) return;
-
-    // Stroke width is world units; divide by zoom to pin it to screen pixels.
-    const px = 1 / this.zoom;
-
-    for (const zone of this.doc.manifest.zones) {
-      const pts = zone.area;
-      // Fewer than three vertices is not an area. The exporter already collapses those to
-      // an empty ring, so this is the net under a hand-made or future file.
-      if (pts.length < 6) continue;
-
-      const color = zoneColor(zone.color);
-      g.moveTo(pts[0]!, pts[1]!);
-      for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i]!, pts[i + 1]!);
-      g.closePath();
-      // The ring arrives open — the exporter does not repeat the first vertex — so the
-      // path is closed here rather than in the data.
-      g.fill({ color, alpha: ZONE_FILL_ALPHA });
-      g.stroke({ width: ZONE_EDGE_PX * px, color, alpha: 0.9, join: 'round' });
-    }
+    this.zones.clear();
+    if (this.zones.visible) drawZones(this.zones, this.doc.manifest.zones, this.zoom);
   }
 
   // ── layers & highlight ────────────────────────────────────────────────────
-  /**
-   * Swaps a raster layer's pixels for a re-baked set, keeping its place in the draw order
-   * and its visibility.
-   *
-   * The old textures are destroyed with their sources and the bitmaps closed, not left for
-   * the collector: each full layer is 55 MB of GPU memory on a large map, and flipping the
-   * colouring back and forth would otherwise stack copies of it until the context is lost.
-   */
+  /** Swaps a raster layer's pixels for a re-baked set; see `replaceChunkSprites`. */
   replaceLayer(name: 'entities', chunks: LayerChunk[]) {
     const container = this.sprites.get(name);
-    if (!container) return;
-    for (const child of container.removeChildren()) {
-      const sprite = child as Sprite;
-      const bitmap = sprite.texture.source.resource as ImageBitmap | undefined;
-      sprite.destroy({ texture: true, textureSource: true });
-      bitmap?.close?.();
-    }
-    addChunkSprites(container, chunks);
+    if (container) replaceChunkSprites(container, chunks);
   }
 
   setLayerVisible(name: LayerName, visible: boolean) {
@@ -824,32 +429,7 @@ export class MapScene {
 
   /** Draws the hover and selection outlines. Pass -1 for none. */
   setHighlight(hovered: number, selected: number) {
-    const g = this.highlight;
-    g.clear();
-    // Outline width is in world units, so divide by zoom to keep it constant on screen.
-    const px = 1 / this.zoom;
-
-    const draw = (index: number, color: number, widthPx: number, fillAlpha: number) => {
-      const e = this.doc.entities[index];
-      if (!e) return;
-
-      if (hasSparseFootprint(e)) {
-        // A snaking conveyor's bounding box is mostly empty, so outlining it would flash a
-        // huge rectangle over unrelated machines. Trace the tiles it actually covers.
-        const tiles = e.tiles!;
-        for (let i = 0; i + 1 < tiles.length; i += 2) {
-          g.rect(e.x + tiles[i]!, e.y + tiles[i + 1]!, 1, 1);
-        }
-      } else {
-        g.rect(e.x, e.y, e.w, e.h);
-      }
-
-      if (fillAlpha > 0) g.fill({ color, alpha: fillAlpha });
-      g.stroke({ width: widthPx * px, color, alpha: 0.95, alignment: 0.5 });
-    };
-
-    if (hovered >= 0 && hovered !== selected) draw(hovered, 0xffffff, 1.5, 0.12);
-    if (selected >= 0) draw(selected, 0x4fc3f7, 2.5, 0.2);
+    drawHighlight(this.highlight, this.doc.entities, hovered, selected, this.zoom);
   }
 
   destroy() {
