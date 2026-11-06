@@ -176,6 +176,18 @@ misrendering them.
 
 ### Fixed
 
+- **Exports failed on Captain of Industry 0.8.8 (Update 4.3).** The update turned
+  `LocStr.TranslatedString` from a field into a property, so a mod built against 0.8.7 threw
+  `MissingFieldException` on every export. The source was fine; the mod is now built against
+  0.8.8b, and requires 0.8.8 or later.
+
+- **A failed export destroyed the last good map.** The archive was written straight over the
+  previous file, so a crash part way left planes and no manifest, which the app could not
+  open. It is now built as `<save>.coimap.tmp` and moved into place only once complete.
+
+- **A truncated export got the wrong error.** It was told it might be a `.save` file. It now
+  says the export is incomplete and where to find the mod's log.
+
 - **The grid used the wrong steps.** The heavy step was picked per frame by doubling until the
   lines were far enough apart, so it landed on 256 or 1024 as readily as on anything meaningful
   — the grid changed shape as you zoomed instead of describing the map. It is now three fixed,

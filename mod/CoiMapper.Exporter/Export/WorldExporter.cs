@@ -66,6 +66,7 @@ namespace CoiMapper.Export {
                     Entities = entityCount, Transports = 0, Edges = 0, Protos = usedProtos.Count,
                 };
                 WriteManifest(archive, map, surfaces, tileSurfaces, deposits, vehicles, zones.Zones, counts, gameName);
+                archive.Commit();
             }
         }
 

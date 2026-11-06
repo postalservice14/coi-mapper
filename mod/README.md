@@ -128,6 +128,15 @@ The game logs mod loading in detail:
 Search there for `CoiMapper`. The mod logs its output path on success and the full
 exception on failure — export errors are caught so a failure can never take the game down.
 
+### After a game update
+
+A game update can break the mod even when the source still compiles. A member that moves from
+a field to a property needs no source change, but a DLL built before the move throws
+`MissingFieldException` when it runs. So after any update, recopy the assemblies into `mod/lib/`
+and rebuild, then read the build errors and the game log. A `try/catch` around such an access
+does not help, because the exception is thrown when the enclosing method is compiled, before
+its `try` block is entered.
+
 ## What is implemented
 
 | Piece | State |

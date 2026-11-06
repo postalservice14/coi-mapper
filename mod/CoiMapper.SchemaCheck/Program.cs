@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using CoiMapper.Export;
 using CoiMapper.Schema;
 
@@ -269,10 +270,37 @@ namespace CoiMapper.SchemaCheck {
                     Counts = new Counts { Entities = entities.Count, Transports = 1, Edges = 1, Protos = entities.Count },
                 };
                 archive.WriteJson(CoiMapSchema.Manifest, manifest.WriteTo);
+                archive.Commit();
 
                 Console.WriteLine($"wrote {path}  ({Width}x{Height}, {entities.Count} entities)");
             }
-            return 0;
+
+            // Reads the archive just written back, so it needs to run after the commit above.
+            return FailedExportKeepsLastGoodMap(path) ? 0 : 1;
+        }
+
+        /// <summary>
+        /// An export that dies part way must leave the previous map alone, and no temporary
+        /// file behind. The planes-only archive this once produced could not be opened.
+        /// </summary>
+        private static bool FailedExportKeepsLastGoodMap(string path) {
+            string target = path + ".abort-check";
+            File.Copy(path, target, overwrite: true);
+            var before = File.ReadAllBytes(target);
+            try {
+                using (var failed = new CoiMapArchive(target)) {
+                    failed.WritePlaneU8("surface", new byte[Width * Height]);
+                    // No Commit: this is what an exception thrown mid-export amounts to.
+                }
+
+                bool kept = File.ReadAllBytes(target).AsSpan().SequenceEqual(before);
+                bool clean = !File.Exists(target + ".tmp");
+                Console.WriteLine($"aborted export: previous map {(kept ? "kept" : "LOST")}, " +
+                    $"temporary file {(clean ? "removed" : "LEFT BEHIND")}");
+                return kept && clean;
+            } finally {
+                File.Delete(target);
+            }
         }
     }
 }
