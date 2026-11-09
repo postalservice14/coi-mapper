@@ -7,6 +7,7 @@
  * escaping, enum encoding, plane byte order, or row-major convention.
  */
 import { readFileSync } from 'node:fs';
+import { zipSync } from 'fflate';
 import { parseCoiMap } from '../src/coimap/parse.ts';
 import { buildTileIndex } from '../src/coimap/stack.ts';
 import { buildTextures } from '../src/coimap/terrain.ts';
@@ -272,6 +273,15 @@ check('overlay textures build from the new planes',
 check('paving texture is opaque where paved and clear where not',
   textures.surfaces![(7 * width + 25) * 4 + 3] > 200 && textures.surfaces![3] === 0,
   `alpha paved ${textures.surfaces![(7 * width + 25) * 4 + 3]}, unpaved ${textures.surfaces![3]}`);
+
+// A truncated export has planes but no manifest, and must say so rather than blame a .save.
+let truncatedError = '';
+try {
+  parseCoiMap(zipSync({ 'planes/height.u16': new Uint8Array(4) }));
+} catch (e) {
+  truncatedError = (e as Error).message;
+}
+check('a truncated export is reported as incomplete', truncatedError.includes('incomplete'), truncatedError);
 
 const failed = checks.filter((c) => !c.ok);
 console.log(`\n  ${checks.length - failed.length}/${checks.length} contract checks passed\n`);

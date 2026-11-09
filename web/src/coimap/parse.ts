@@ -84,9 +84,16 @@ export function parseCoiMap(archive: Uint8Array): ParsedArchive {
 
   const manifestBytes = files[MEMBERS.manifest];
   if (!manifestBytes) {
+    // The manifest is written last, so planes without one are an export that died part way.
+    // Exporters since 0.3.1 no longer leave these behind, but older files can still turn up.
+    const truncated = Object.keys(files).some((name) => name.startsWith(MEMBERS.planeDir));
     throw new CoiMapError(
-      `Archive has no ${MEMBERS.manifest}. If you selected a Captain of Industry ".save" file, ` +
-        'export a .coimap from inside the game with the CoiMapper mod first.',
+      truncated
+        ? 'This .coimap is incomplete: the CoiMapper mod failed part way through the export. ' +
+            'This usually means the game updated and the mod needs updating too. ' +
+            'Search for "CoiMapper" in %APPDATA%/Captain of Industry/Logs for the error.'
+        : `Archive has no ${MEMBERS.manifest}. If you selected a Captain of Industry ".save" file, ` +
+            'export a .coimap from inside the game with the CoiMapper mod first.',
     );
   }
 
