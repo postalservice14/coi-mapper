@@ -8,7 +8,7 @@
     "postalservice14"
   ],
   "min_game_version": "0.8.8",
-  "max_verified_game_version": "0.8.8b",
+  "max_verified_game_version": "0.8.8d",
   "primary_dlls": [
     "CoiMapper.Exporter.dll"
   ],

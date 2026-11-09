@@ -181,6 +181,9 @@ misrendering them.
   `MissingFieldException` on every export. The source was fine; the mod is now built against
   0.8.8b, and requires 0.8.8 or later.
 
+- **The mod browser flagged the mod as unverified on 0.8.8d.** It now builds cleanly against
+  the 0.8.8d assemblies, and `max_verified_game_version` is raised to match.
+
 - **A failed export destroyed the last good map.** The archive was written straight over the
   previous file, so a crash part way left planes and no manifest, which the app could not
   open. It is now built as `<save>.coimap.tmp` and moved into place only once complete.
